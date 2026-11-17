@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dev flavor only: test hooks that prod never contains. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+
+        <!-- Driven from adb only: DUMP is held by the shell, never by an app. -->
+        <receiver
+            android:name=".dev.DevSettingsReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="io.github.uirlisi.mostor.dev.SET_SETTING" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".dev.DevDuplicateReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="io.github.uirlisi.mostor.dev.ADD_DUPLICATE" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".dev.DevSampleReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="io.github.uirlisi.mostor.dev.ADD_SAMPLES" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

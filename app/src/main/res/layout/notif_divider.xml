@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The thin line between the status notification's sections: a gray that reads on light and dark.
+     An ImageView, since a notification layout can't hold a plain View. -->
+<ImageView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="1dp"
+    android:layout_marginTop="6dp"
+    android:layout_marginBottom="6dp"
+    android:background="#55888888"
+    android:importantForAccessibility="no" />

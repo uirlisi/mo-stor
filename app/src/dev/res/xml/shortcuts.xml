@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Launcher shortcuts (SPEC §6.4): long-press the icon. Each opens the quick sheet already in the
+  confirmation state for that record, so Undo is there. One file per flavor because
+  targetPackage is the application id (io.github.uirlisi.mostor.dev).
+-->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="wet"
+        android:enabled="true"
+        android:icon="@drawable/shortcut_wet"
+        android:shortcutShortLabel="@string/shortcut_wet"
+        android:shortcutLongLabel="@string/shortcut_wet_long">
+        <intent
+            android:action="io.github.uirlisi.mostor.action.WET"
+            android:targetPackage="io.github.uirlisi.mostor.dev"
+            android:targetClass="io.github.uirlisi.mostor.sheet.QuickSheetActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="poop"
+        android:enabled="true"
+        android:icon="@drawable/shortcut_poop"
+        android:shortcutShortLabel="@string/shortcut_poop"
+        android:shortcutLongLabel="@string/shortcut_poop_long">
+        <intent
+            android:action="io.github.uirlisi.mostor.action.POOP"
+            android:targetPackage="io.github.uirlisi.mostor.dev"
+            android:targetClass="io.github.uirlisi.mostor.sheet.QuickSheetActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="left"
+        android:enabled="true"
+        android:icon="@drawable/shortcut_left"
+        android:shortcutShortLabel="@string/shortcut_left"
+        android:shortcutLongLabel="@string/shortcut_left_long">
+        <intent
+            android:action="io.github.uirlisi.mostor.action.LEFT"
+            android:targetPackage="io.github.uirlisi.mostor.dev"
+            android:targetClass="io.github.uirlisi.mostor.sheet.QuickSheetActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="right"
+        android:enabled="true"
+        android:icon="@drawable/shortcut_right"
+        android:shortcutShortLabel="@string/shortcut_right"
+        android:shortcutLongLabel="@string/shortcut_right_long">
+        <intent
+            android:action="io.github.uirlisi.mostor.action.RIGHT"
+            android:targetPackage="io.github.uirlisi.mostor.dev"
+            android:targetClass="io.github.uirlisi.mostor.sheet.QuickSheetActivity" />
+    </shortcut>
+</shortcuts>

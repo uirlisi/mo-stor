@@ -1,0 +1,27 @@
+# Gradle / build output
+.gradle/
+.kotlin/
+build/
+captures/
+*.apk
+*.aab
+
+# Machine-local configuration: SDK path and release-signing secrets
+local.properties
+
+# Keys never live in the repo
+*.jks
+*.keystore
+*.p12
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Exports with the family's data (e.g. a Baby Tracker report) never go in the repo
+*.pdf
+
+# jqwik test state, rewritten on every test run
+.jqwik-database

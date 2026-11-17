@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The page color (Phase 3b), so the window behind Compose matches it while the app starts. -->
+    <color name="mostor_page">#F6F6F7</color>
+</resources>

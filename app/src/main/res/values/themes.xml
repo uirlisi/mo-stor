@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose draws the UI. The window theme only has to follow day/night and hide the action bar. -->
+    <style name="Theme.MoStor" parent="android:Theme.DeviceDefault.DayNight">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowBackground">@color/mostor_page</item>
+        <!-- Android 12+ splash: the adaptive launcher icon (its own beige) on the page color, which
+             switches with night mode, so it matches the first frame (Phase 6). -->
+        <item name="android:windowSplashScreenBackground">@color/mostor_page</item>
+    </style>
+
+    <!-- The quick sheet: a translucent window, so the sheet floats over whatever is behind it. -->
+    <style name="Theme.MoStor.Sheet" parent="Theme.MoStor">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.Translucent</item>
+    </style>
+</resources>

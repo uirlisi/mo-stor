@@ -1,0 +1,37 @@
+<p>Mo Stór (Irish for "my treasure") is a baby log for parents who are holding a baby with one hand at 3am. You don't need to open the app: pull down the shade (regardless of whether the screen is locked), tap the Mo Stór notification, and tap what happened. All it takes is one swipe and two taps.</p>
+
+<p><b>What it records</b></p>
+<ul>
+<li>Breastfeeds with side switches, bottles (breast milk or formula), pumping</li>
+<li>Sleep</li>
+<li>Diapers: wet, poopy, mixed, dry</li>
+<li>Meds and supplements such as Vit D, with an optional daily or weekly schedule that is shown, never enforced</li>
+<li>Notes</li>
+</ul>
+
+<p><b>Made for tired people</b></p>
+<ul>
+<li>The notification answers the night questions: how long since the last feed started, which side, asleep or awake and for how long, today's diaper counts.</li>
+<li>Started a timer late, or forgot to stop it? Fix it with one more tap ("started 10 min ago", "ended 20 min ago"). A timer that ran for hours is caught and easy to correct.</li>
+<li>No confirmation dialogs: every record can be undone.</li>
+<li>Large touch targets; light and dark theme.</li>
+</ul>
+
+<p><b>See the day and the weeks</b></p>
+<ul>
+<li>Today: a summary and a timeline, including the left/right balance.</li>
+<li>Log: every record, with filters, editing and possible duplicates flagged.</li>
+<li>Patterns: one row per day across the 24 hours, to see whether sleep and feeds have a rhythm.</li>
+<li>Stats: per-day charts for feeds, sleep, diapers, bottles, pumping and meds.</li>
+<li>Several children, each with their own color, meds, and birth details.</li>
+</ul>
+
+<p><b>Your data stays with you</b></p>
+<ul>
+<li>The app has no Internet permission, and its build fails if anything adds one. No account, no ads, no analytics, no crash reporting.</li>
+<li>Up to a few caregivers' phones sync directly with each other over Bluetooth, encrypted with a key only your phones share.</li>
+<li>Backups: a full copy of the database, JSON and CSV export, JSON import, and an optional daily export to a folder you choose.</li>
+<li>Coming from the Baby Tracker app? Its PDF daily report can be imported (Android 15 or later).</li>
+</ul>
+
+<p>Mo Stór doesn't give medical advice: no recommended doses, intervals or "normal" ranges. It records; it doesn't judge.</p>

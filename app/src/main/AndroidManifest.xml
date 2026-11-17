@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- SPEC §7: only allowlisted permissions. The release build fails on anything else. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Bluetooth sync (SPEC §9; approved 2026-11-14). Scanning never derives a location. -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+    <uses-feature
+        android:name="android.hardware.bluetooth_le"
+        android:required="false" />
+
+    <!-- SPEC §8: no cloud backup; the database moves in a phone-to-phone transfer. -->
+    <application
+        android:name=".MoStorApp"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.MoStor">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Launcher shortcuts (SPEC §6.4); per flavor, see res/xml/shortcuts.xml. -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity>
+
+        <!-- Shown over the lock screen; never turns the screen on. -->
+        <activity
+            android:name=".sheet.QuickSheetActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:showWhenLocked="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.MoStor.Sheet"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- The same sheet when it isn't allowed on the lock screen: no showWhenLocked, so Android
+             asks for the unlock before showing it (the notification picks the entry). -->
+        <activity
+            android:name=".sheet.QuickSheetAfterUnlockActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:taskAffinity=""
+            android:theme="@style/Theme.MoStor.Sheet"
+            android:windowSoftInputMode="adjustResize" />
+
+        <receiver
+            android:name=".notify.ActionReceiver"
+            android:exported="false" />
+
+        <!-- The periodic background sync, run by Android's job scheduler (SPEC §9.6). -->
+        <service
+            android:name=".sync.SyncJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- Woken by Android's background Bluetooth scan for a nearby sync (SPEC §9.6). -->
+        <receiver
+            android:name=".sync.SyncScanReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".notify.SystemEventsReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.LOCALE_CHANGED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

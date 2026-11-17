@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Mo Stór record icon, drawn for the app (icon review, 2026-11-12). Generated from one set of paths; tinted where used. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@android:color/white"
+        android:fillType="evenOdd"
+        android:pathData="M4.5,2.5H7.9C8.5,5.7 10.3,7.7 13.5,9.5C16.9,11.4 19.9,12.9 20.1,15.6H21C21.6,15.6 22,16.1 22,16.6C22,17.1 21.6,17.6 21,17.6H20.1C19.7,20.1 17.4,21.5 14.5,21.5H4.5ZM8,12.6h2.9c1.5,0 2.5,0.9 2.5,2.2 0,1 -0.6,1.7 -1.5,2l1.8,2.6h-2.2l-1.6,-2.4v2.4H8zM9.9,14.1h1c0.5,0 0.8,0.3 0.8,0.8s-0.3,0.8 -0.8,0.8h-1z" />
+</vector>

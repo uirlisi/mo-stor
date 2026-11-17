@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Drawn for Mo Stór: three bars on a base line. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:tint="?android:attr/colorControlNormal"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M4.5,12h3.5v7H4.5zM10.25,4h3.5v15h-3.5zM16,8h3.5v11H16zM3,19.5h18V21H3z" />
+</vector>

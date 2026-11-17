@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher shortcut icon: the glyph on a pale disc (the launcher masks it round). -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/shortcut_left_bg" />
+    <foreground android:drawable="@drawable/shortcut_fg_left" />
+</adaptive-icon>

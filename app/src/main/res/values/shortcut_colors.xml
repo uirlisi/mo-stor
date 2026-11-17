@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pale discs behind the launcher shortcut glyphs. -->
+<resources>
+    <color name="shortcut_wet_bg">#FFDBECFB</color>
+    <color name="shortcut_poop_bg">#FFEAE4E2</color>
+    <color name="shortcut_left_bg">#FFD6EAE7</color>
+    <color name="shortcut_right_bg">#FFD6EAE7</color>
+</resources>

@@ -24,6 +24,9 @@ import java.util.Date
 class Formats(private val context: Context) {
     private fun s(id: Int, vararg args: Any): String = context.getString(id, *args)
 
+    /** A plural string resource chosen by [count], formatted with [args]. */
+    fun plural(id: Int, count: Int, vararg args: Any): String = context.resources.getQuantityString(id, count, *args)
+
     /** A string resource, for messages built outside composition. */
     fun string(id: Int, vararg args: Any): String = s(id, *args)
 
@@ -38,6 +41,13 @@ class Formats(private val context: Context) {
         context, ms,
         android.text.format.DateUtils.FORMAT_SHOW_DATE or android.text.format.DateUtils.FORMAT_SHOW_WEEKDAY or
             android.text.format.DateUtils.FORMAT_ABBREV_ALL,
+    )
+
+    /** "Nov 14, 2026, 9:16 AM": date and time in the phone's locale and 12/24-hour setting. */
+    fun dateTime(ms: Long): String = android.text.format.DateUtils.formatDateTime(
+        context, ms,
+        android.text.format.DateUtils.FORMAT_SHOW_DATE or android.text.format.DateUtils.FORMAT_SHOW_YEAR or
+            android.text.format.DateUtils.FORMAT_SHOW_TIME or android.text.format.DateUtils.FORMAT_ABBREV_MONTH,
     )
 
     /** "2h 40m" or "40m". */

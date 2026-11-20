@@ -16,6 +16,7 @@ import androidx.room.migration.Migration
         SettingEntity::class,
         UndoEntity::class,
         PeerEntity::class,
+        MemberEntity::class,
     ],
     version = MoStorDb.LATEST_VERSION,
     exportSchema = true,
@@ -28,16 +29,17 @@ abstract class MoStorDb : RoomDatabase() {
     abstract fun settings(): SettingDao
     abstract fun undo(): UndoDao
     abstract fun peers(): PeerDao
+    abstract fun members(): MemberDao
 
     companion object {
         const val FILE_NAME = "mostor.db"
-        const val LATEST_VERSION = 3
+        const val LATEST_VERSION = 5
 
         /**
          * Every schema change after a release gets a migration here, with a test. Never add
          * fallbackToDestructiveMigration(): it would delete the family's data.
          */
-        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
 
         fun build(context: Context, fileName: String = FILE_NAME): MoStorDb =
             Room.databaseBuilder(context.applicationContext, MoStorDb::class.java, fileName)

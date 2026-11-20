@@ -23,6 +23,7 @@ class SyncConvergenceTest {
         val events = linkedMapOf<String, Event>()
         val segments = linkedMapOf<String, BreastSegment>()
         val presets = linkedMapOf<String, SupplementPreset>()
+        var members: List<Member> = emptyList()
         val clock = HybridClock(origin, null) { time() + skewMs }
         var lastChange: Change? = null
         private var ids = 0
@@ -55,10 +56,13 @@ class SyncConvergenceTest {
         data class Start(val phone: Int, val sleep: Boolean) : Op
         data class Stop(val phone: Int, val sleep: Boolean) : Op
         data class Switch(val phone: Int) : Op
+        data class GiveUp(val phone: Int, val sleep: Boolean) : Op
         data class Delete(val phone: Int, val pick: Int) : Op
         data class UndoLast(val phone: Int) : Op
         data class AddChild(val phone: Int) : Op
         data class MatchChildren(val phone: Int, val other: Int) : Op
+        data class AddMember(val phone: Int, val member: Int) : Op
+        data class RemoveMember(val phone: Int, val member: Int) : Op
         data class SyncPair(val a: Int, val b: Int) : Op
         data class Wait(val ms: Long) : Op
     }
@@ -70,11 +74,14 @@ class SyncConvergenceTest {
             net.jqwik.api.Tuple.of(6, Combinators.combine(phone, Arbitraries.integers().between(0, 3)).`as` { p, k -> Op.Record(p, k) }),
             net.jqwik.api.Tuple.of(3, Combinators.combine(phone, Arbitraries.of(true, false)).`as` { p, s -> Op.Start(p, s) }),
             net.jqwik.api.Tuple.of(3, Combinators.combine(phone, Arbitraries.of(true, false)).`as` { p, s -> Op.Stop(p, s) }),
+            net.jqwik.api.Tuple.of(2, Combinators.combine(phone, Arbitraries.of(true, false)).`as` { p, s -> Op.GiveUp(p, s) }),
             net.jqwik.api.Tuple.of(2, phone.map { Op.Switch(it) }),
             net.jqwik.api.Tuple.of(2, Combinators.combine(phone, Arbitraries.integers().between(0, 50)).`as` { p, i -> Op.Delete(p, i) }),
             net.jqwik.api.Tuple.of(2, phone.map { Op.UndoLast(it) }),
             net.jqwik.api.Tuple.of(1, phone.map { Op.AddChild(it) }),
             net.jqwik.api.Tuple.of(1, Combinators.combine(phone, phone).`as` { p, o -> Op.MatchChildren(p, o) }),
+            net.jqwik.api.Tuple.of(1, Combinators.combine(phone, Arbitraries.integers().between(0, 4)).`as` { p, m -> Op.AddMember(p, m) }),
+            net.jqwik.api.Tuple.of(1, Combinators.combine(phone, Arbitraries.integers().between(0, 4)).`as` { p, m -> Op.RemoveMember(p, m) }),
             net.jqwik.api.Tuple.of(5, Combinators.combine(phone, phone).filter { a, b -> a != b }.`as` { a, b -> Op.SyncPair(a, b) }),
             net.jqwik.api.Tuple.of(3, Arbitraries.longs().between(1, 3 * 60_000L).map { Op.Wait(it) }),
         )
@@ -88,6 +95,8 @@ class SyncConvergenceTest {
         val phones = listOf(Phone("a", 0, { now }), Phone("b", -90_000, { now }), Phone("c", 120_000, { now }))
         val written = HashSet<Pair<String, String>>() // (id, hlc) of every row state a phone wrote
 
+        // Every phone starts with the same upgrade rows for the three phones (names differ by phone).
+        phones.forEach { p -> p.members = phones.map { Member(it.origin, "${it.origin} as ${p.origin} saw it", addedAt = 0, hlc = Roster.SEED_HLC) } }
         // Each phone starts with its own implicit child and seeded meds, as a fresh install does.
         phones.forEach { p ->
             val cx = p.cx
@@ -113,6 +122,12 @@ class SyncConvergenceTest {
                 to.write(Merge.plan(local, rows).change, undoable = false)
                 check(from !== to)
             }
+            // Rosters go whole both ways; each moves its clock past the other's newest stamp.
+            val (ma, mb) = a.members to b.members
+            Roster.newestHlc(mb)?.let { a.clock.receive(HlcStamp.parse(it)) }
+            Roster.newestHlc(ma)?.let { b.clock.receive(HlcStamp.parse(it)) }
+            a.members = Roster.merge(ma, mb)
+            b.members = Roster.merge(mb, ma)
         }
 
         for (op in ops) {
@@ -141,6 +156,12 @@ class SyncConvergenceTest {
                     val t = p.running(if (op.sleep) Kind.SLEEP else Kind.BREAST).firstOrNull() ?: return@let
                     val cx = p.cx
                     record(p, Timers.stop(t, cx.now, cx))
+                }
+                is Op.GiveUp -> phones[op.phone].let { p ->
+                    // An automatic change (SPEC §5.5): it must lose to what other phones did meanwhile.
+                    val t = p.running(if (op.sleep) Kind.SLEEP else Kind.BREAST).firstOrNull() ?: return@let
+                    val cx = p.cx
+                    record(p, Timers.giveUp(t, cx).asLocal(), undoable = false)
                 }
                 is Op.Switch -> phones[op.phone].let { p ->
                     val t = p.running(Kind.BREAST).firstOrNull() ?: return@let
@@ -182,6 +203,14 @@ class SyncConvergenceTest {
                         ),
                     )
                 }
+                is Op.AddMember -> phones[op.phone].let { p ->
+                    p.members = Roster.merge(p.members, listOf(Roster.add("m${op.member}", "M${op.member}", p.origin, p.cx)))
+                }
+                is Op.RemoveMember -> phones[op.phone].let { p ->
+                    val id = if (op.member < 3) phones[op.member].origin else "m${op.member}"
+                    val m = p.members.firstOrNull { it.deviceId == id && it.active } ?: return@let
+                    p.members = Roster.merge(p.members, listOf(Roster.remove(m, p.origin, p.cx)))
+                }
                 is Op.SyncPair -> sync(phones[op.a], phones[op.b])
             }
             now += 1_000
@@ -197,6 +226,7 @@ class SyncConvergenceTest {
             assertEquals(first.events.sortedBy { it.id }, r.events.sortedBy { it.id }, "events on ${p.origin}")
             assertEquals(first.segments.sortedBy { it.id }, r.segments.sortedBy { it.id }, "segments on ${p.origin}")
             assertEquals(first.presets.sortedBy { it.id }, r.presets.sortedBy { it.id }, "presets on ${p.origin}")
+            assertEquals(phones[0].members.sortedBy { it.deviceId }, p.members.sortedBy { it.deviceId }, "members on ${p.origin}")
         }
         // Every row state held is one a phone wrote (seeds included), never a mix.
         val seeds = phones.flatMap { p -> p.rows().let { it.children + it.presets } }.filter { it.hlc == Presets.SEED_HLC || it.id.endsWith("-child") }

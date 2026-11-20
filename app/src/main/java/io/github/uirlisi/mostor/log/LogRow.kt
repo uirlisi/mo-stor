@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import io.github.uirlisi.mostor.ui.AppUi
 import io.github.uirlisi.mostor.ui.MoStor
 import io.github.uirlisi.mostor.ui.FitText
 import io.github.uirlisi.mostor.ui.ChildTag
@@ -123,9 +124,22 @@ fun LogRow(
     }
 }
 
+/**
+ * The dialog for [item] and its possible duplicates among [shown] (the records on screen), on Today
+ * and in the log: [Keep this one] deletes the others as one action, with Undo. [onClose] closes it.
+ */
+@Composable
+fun DuplicateDialog(ui: AppUi, item: DayItem, shown: List<DayItem>, now: Long, unit: VolumeUnit, onClose: () -> Unit) {
+    val group = listOf(item) + shown.filter { it.event.id in item.duplicates }
+    DuplicateDialog(group, ui.fmt, now, unit, onKeep = { keep ->
+        onClose()
+        ui.act({ ui.repository.deleteAll(group.map { it.event.id }.filter { it != keep }) })
+    }, onDismiss = onClose)
+}
+
 /** The two (or more) records that may be one, each with [Keep this one]; the others are deleted with Undo. */
 @Composable
-fun DuplicateDialog(
+private fun DuplicateDialog(
     items: List<DayItem>,
     fmt: Formats,
     now: Long,

@@ -137,10 +137,7 @@ fun TodayScreen(ui: AppUi) {
 
     val st = home
     if (adding && st != null) {
-        AddRecordDialog(st.settings.visibility, ui.fmt, onPick = { kind ->
-            adding = false
-            ui.open(Route.Add(kind))
-        }, onDismiss = { adding = false })
+        AddRecordDialog(ui, st.settings.visibility, onClose = { adding = false })
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -212,17 +209,19 @@ private fun DayPage(
     val repository = ui.repository
     val fmt = ui.fmt
     val context = LocalContext.current
-    val view by remember(offset, showHidden) { repository.dayViews(offset, showHidden) }.collectAsStateWithLifecycle(initialValue = null)
+    // Read again every hour as well as on every change: the day boundary (midnight, or the day start
+    // hour) passing while Today is on screen moves "today" without any record changing.
+    val hour = now / 3_600_000L
+    var shown by remember(offset, showHidden) { mutableStateOf<io.github.uirlisi.mostor.data.DayView?>(null) }
+    val fresh by remember(offset, showHidden, hour) { repository.dayViews(offset, showHidden) }.collectAsStateWithLifecycle(initialValue = null)
+    LaunchedEffect(fresh) { fresh?.let { shown = it } }
+    // The previous hour's view stays up until the new one is read, so the page doesn't blank.
+    val view = fresh ?: shown
     var duplicateOf by remember { mutableStateOf<DayItem?>(null) }
     val unit = st?.settings?.unit ?: ui.unit
 
     duplicateOf?.let { item ->
-        val all = view?.items.orEmpty()
-        val group = listOf(item) + all.filter { it.event.id in item.duplicates }
-        DuplicateDialog(group, fmt, now, unit, onKeep = { keep ->
-            duplicateOf = null
-            for (other in group.map { it.event.id }.filter { it != keep }) ui.act({ repository.delete(other) })
-        }, onDismiss = { duplicateOf = null })
+        DuplicateDialog(ui, item, view?.items.orEmpty(), now, unit, onClose = { duplicateOf = null })
     }
 
     LazyColumn(

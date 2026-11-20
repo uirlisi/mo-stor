@@ -21,7 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -176,7 +176,7 @@ private fun withChild(st: HomeState, childId: String, fmt: Formats, what: String
 /** "12 minutes", "1 hour 5 minutes", for TalkBack. */
 @Composable
 private fun spokenDuration(ms: Long): String {
-    val r = LocalContext.current.resources
+    val r = LocalResources.current
     val e = Elapsed.of(ms)
     val minutes = r.getQuantityString(R.plurals.cd_minutes, e.minutes, e.minutes)
     return if (e.hours > 0) r.getQuantityString(R.plurals.cd_hours, e.hours.toInt(), e.hours) + " " + minutes else minutes

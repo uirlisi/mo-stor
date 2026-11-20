@@ -28,7 +28,8 @@ import io.github.uirlisi.mostor.ui.ChartColors
 import io.github.uirlisi.mostor.ui.Formats
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-import java.util.Locale
+import io.github.uirlisi.mostor.ui.currentLocale
+import io.github.uirlisi.mostor.ui.localizedPattern
 import kotlin.math.ceil
 
 /**
@@ -98,14 +99,14 @@ fun BarChart(
     val selectedShade = MaterialTheme.colorScheme.surfaceVariant
     val n = series.days.size
     // Weekdays for a week, day numbers for two weeks, then day and month (labels further apart).
-    val dayFormat = DateTimeFormatter.ofPattern(
+    val locale = currentLocale()
+    val dayFormat = remember(n, locale) {
         when {
-            n <= 7 -> "EEE"
-            n <= 14 -> "d"
-            else -> "d MMM"
-        },
-        Locale.getDefault(),
-    )
+            n <= 7 -> DateTimeFormatter.ofPattern("EEE", locale)
+            n <= 14 -> DateTimeFormatter.ofPattern("d", locale)
+            else -> localizedPattern(locale, "dMMM")
+        }
+    }
     val labelGap = if (n <= 14) 28.dp else 64.dp
     // The value labels, measured once: the plot starts after the widest. The tap handler reads
     // the same left edge.

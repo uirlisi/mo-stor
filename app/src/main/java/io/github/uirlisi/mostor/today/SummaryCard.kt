@@ -22,7 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -72,7 +72,7 @@ private data class SummaryRow(
  */
 @Composable
 fun SummaryCard(ct: ChildTotals, fmt: Formats, unit: VolumeUnit, v: Visibility, childColor: Color? = null) {
-    val r = LocalContext.current.resources
+    val r = LocalResources.current
     val t: DayTotals = ct.totals
     val rows = buildList {
         if ((t.feeds > 0 || t.breastMs > 0) && (v.shows(Kind.BREAST) || v.shows(Kind.BOTTLE))) {

@@ -61,9 +61,16 @@ class HybridClock(
         return next
     }
 
+    /**
+     * Folds in [remote], so later local stamps sort after it. A stamp more than [MAX_AHEAD_MS] ahead of
+     * this phone's wall clock is ignored (a phone with a wrong date, or a crafted backup): it would
+     * drag every later stamp along, and one near the encoding's limit would stop this phone from
+     * stamping anything at all. The row it came with is still merged as usual.
+     */
     @Synchronized
     fun receive(remote: HlcStamp): HlcStamp {
         val pt = wallClock()
+        if (remote.wallMs > pt + MAX_AHEAD_MS) return now()
         val prev = last
         val prevWall = prev?.wallMs ?: Long.MIN_VALUE
         val wall = maxOf(prevWall, remote.wallMs, pt)
@@ -75,6 +82,11 @@ class HybridClock(
         }
         last = next
         return next
+    }
+
+    companion object {
+        /** How far ahead of this phone's clock a stamp from elsewhere may be and still move it. */
+        const val MAX_AHEAD_MS = 24 * 60 * 60_000L
     }
 
     /** The stamp after (wall, counter). If the counter would overflow, the wall time moves on 1 ms. */

@@ -37,6 +37,15 @@ class MedsTest {
     }
 
     @Test
+    fun `a weekly skip covers its week, and the next week is due as usual`() {
+        val skip = dose(sat, skipped = true)
+        assertEquals(MedStatus.Skipped(sat), Meds.status(weeklySat, listOf(skip), sat))
+        // Not late on Sunday: the skip covered Saturday.
+        assertEquals(MedStatus.NotItsDay(sat.plusDays(7)), Meds.status(weeklySat, listOf(skip), sat.plusDays(1)))
+        assertEquals(MedStatus.Due, Meds.status(weeklySat, listOf(skip), sat.plusDays(7)))
+    }
+
+    @Test
     fun `a dose early in the week counts for that week's day`() {
         // Set up on Sunday the 15th, so nothing was missed before.
         val weeklySat = med(MedSchedule.WEEKLY, weekday = 6, start = sat.plusDays(1))

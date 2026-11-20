@@ -25,11 +25,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -50,6 +51,8 @@ import io.github.uirlisi.mostor.ui.ChartChildPicker
 import io.github.uirlisi.mostor.ui.ChartControlsColumn
 import io.github.uirlisi.mostor.ui.ChipRow
 import io.github.uirlisi.mostor.ui.Formats
+import io.github.uirlisi.mostor.ui.currentLocale
+import io.github.uirlisi.mostor.ui.localizedPattern
 import io.github.uirlisi.mostor.ui.HiddenTypesChip
 import io.github.uirlisi.mostor.ui.KindIcons
 import io.github.uirlisi.mostor.ui.iconOf
@@ -61,7 +64,7 @@ import io.github.uirlisi.mostor.ui.chartColors
 import io.github.uirlisi.mostor.ui.subtypeChoices
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-import java.util.Locale
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 
 /** The kinds the Patterns screen can narrow to, in chip order. */
@@ -102,9 +105,13 @@ fun PatternsScreen(ui: AppUi) {
     }
     val range = ChartRange.ofOrNull(rangeCode)
     val focus = ChartFocus.decode(focusCode) ?: ChartFocus.All
-    val view by produceState<ChartView?>(null, range, focus, showHidden, tick) {
+    // Collected only while the screen is started (see StatsScreen).
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    val view by produceState<ChartView?>(null, range, focus, showHidden, tick, lifecycle) {
         if (range == null) return@produceState
-        repository.chartViews(range, focus, showHidden, withPatterns = true, withGaps = false).collect { value = it }
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            repository.chartViews(range, focus, showHidden, withPatterns = true, withGaps = false).collect { value = it }
+        }
     }
     val v = view ?: return
     LaunchedEffect(v.settings.unit) { ui.unit = v.settings.unit }
@@ -120,11 +127,12 @@ fun PatternsScreen(ui: AppUi) {
 
     val colors = chartColors()
     val lanes = lanesFor(focus)
-    val res = LocalContext.current.resources
+    val res = LocalResources.current
     val rows = v.patterns.asReversed()
     val points = v.points.associateBy { it.day }
     val chosen = selectedDay?.let(LocalDate::parse)?.takeIf { it in points } ?: v.today
-    val dayLabel = DateTimeFormatter.ofPattern("EEE d", Locale.getDefault())
+    val locale = currentLocale()
+    val dayLabel = remember(locale) { localizedPattern(locale, "EEEd") }
     val nowMin = Patterns.minutes(v.clock, v.today, System.currentTimeMillis())
 
     Column(Modifier.fillMaxSize()) {
@@ -250,7 +258,7 @@ fun daySummary(p: DayPoint, fmt: Formats, unit: VolumeUnit, res: Resources, focu
         parts += res.getQuantityString(R.plurals.count_poop, t.poop, t.poop)
     }
     val bottles = t.bottles.values.sumOf { it.count }
-    if (bottles > 0) parts += fmt.string(R.string.chart_sum_bottles, bottles, fmt.volume(t.bottles.values.sumOf { it.ml }, unit))
+    if (bottles > 0) parts += fmt.plural(R.plurals.chart_sum_bottles, bottles, bottles, fmt.volume(t.bottles.values.sumOf { it.ml }, unit))
     if (t.pumps > 0) parts += fmt.string(R.string.chart_sum_pump, fmt.volume(t.pumpMl, unit))
     for (s in t.supplements) parts += if (s.count > 1) fmt.string(R.string.stats_given_times, s.name ?: "", s.count) else (s.name ?: "")
     val noEnd = Series.withoutEnd(listOf(p))

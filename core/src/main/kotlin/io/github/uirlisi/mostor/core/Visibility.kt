@@ -29,6 +29,9 @@ data class Visibility(
     val bottleContents: List<BottleContent>
         get() = if (!shows(Kind.BOTTLE)) emptyList() else BottleContent.entries.filter { shows(Kind.BOTTLE, it.code) }
 
+    /** Feeds show (counts, the last feed): breast feeds, or a bottle with at least one content shown. */
+    val showsFeeds: Boolean get() = shows(Kind.BREAST) || bottleContents.isNotEmpty()
+
     val diapers: List<Diaper>
         get() = if (!shows(Kind.DIAPER)) emptyList() else Diaper.entries.filter { shows(Kind.DIAPER, it.code) }
 

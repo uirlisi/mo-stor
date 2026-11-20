@@ -50,7 +50,7 @@ class BleTransport(private val context: Context) {
      * Listens on an L2CAP channel and advertises it until [Advertising.stop]. [tagFor] makes the tag
      * from the header (kind, PSM, token); [onSocket] runs for each phone that connects, on its own thread.
      */
-    fun advertise(kind: Int, tagFor: (ByteArray) -> ByteArray, onSocket: (BluetoothSocket) -> Unit): Advertising {
+    suspend fun advertise(kind: Int, tagFor: (ByteArray) -> ByteArray, onSocket: (BluetoothSocket) -> Unit): Advertising {
         val a = adapter ?: throw IllegalStateException("no Bluetooth")
         val server = a.listenUsingInsecureL2capChannel()
         val header = ByteBuffer.allocate(6).put(kind.toByte()).putShort(server.psm.toShort())
@@ -80,7 +80,17 @@ class BleTransport(private val context: Context) {
                 Thread { onSocket(socket) }.start()
             }
         }.start()
-        a.bluetoothLeAdvertiser?.startAdvertising(settings, data, callback) ?: throw IllegalStateException("no advertiser")
+        try {
+            val advertiser = a.bluetoothLeAdvertiser ?: throw IllegalStateException("no advertiser")
+            advertiser.startAdvertising(settings, data, callback)
+            // Android answers within milliseconds; without an answer, carry on as before.
+            val code = withTimeoutOrNull(START_WAIT_MS) { started.await() }
+            if (code != null && code != 0) throw IllegalStateException("advertising failed: $code")
+        } catch (e: Exception) {
+            // The listening socket and its accept thread go too, or they would wait for good.
+            adv.stop()
+            throw e
+        }
         return adv
     }
 
@@ -154,11 +164,12 @@ class BleTransport(private val context: Context) {
 
     companion object {
         private const val TAG = "MoStor"
+        private const val START_WAIT_MS = 2_000L
         const val KIND_PAIR = 1
         const val KIND_SYNC = 2
 
-        /** Mo Stór's sync service (random, fixed for good). */
-        val SERVICE: UUID = UUID.fromString("12ca01f1-1d10-494e-8e7f-2b2e6240d3ff")
+        /** Mo Stór's sync service: prod's is fixed for good; dev has its own ([SyncService]). */
+        val SERVICE: UUID = SyncService.ID
 
         val PERMISSIONS = arrayOf(
             Manifest.permission.BLUETOOTH_SCAN,

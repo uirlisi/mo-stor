@@ -92,7 +92,8 @@ object Meds {
             }
             val s = Schedule.of(p, day)
             val itsDay = s.isDay(day)
-            val line = when (val st = status(p, mine, day)) {
+            val st = status(p, mine, day)
+            val line = when (st) {
                 is MedStatus.GivenToday -> MedDayLine.Kind.GIVEN
                 is MedStatus.GivenThisCycle -> MedDayLine.Kind.GIVEN.takeIf { itsDay }
                 is MedStatus.Skipped -> MedDayLine.Kind.SKIPPED.takeIf { itsDay || st.day == day }
@@ -104,7 +105,7 @@ object Meds {
                 }
                 else -> null
             } ?: continue
-            val late = (status(p, mine, day) as? MedStatus.Late)?.days ?: 0
+            val late = (st as? MedStatus.Late)?.days ?: 0
             scheduled += MedDayLine(p, line, lateDays = if (line == MedDayLine.Kind.LATE) late else 0)
         }
         val counted = scheduled.filter { it.kind != MedDayLine.Kind.SKIPPED }

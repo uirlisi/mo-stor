@@ -4,9 +4,11 @@ package io.github.uirlisi.mostor.core
  * Merging synced rows from elsewhere (SPEC §5.9): per row, the last writer wins on `hlc`. Used by
  * the JSON import (Phase 4) and, later, by Bluetooth sync (Phase 5).
  *
- * A row from elsewhere replaces the local one only when its stamp is greater, so applying the same
- * rows again changes nothing, and the order rows arrive in doesn't matter: re-applying old data can
- * never move a row backwards. Tombstones (`deleted_at`) are rows like any other.
+ * A row from elsewhere replaces the local one only when it is [newer]: its stamp is greater, except
+ * that an automatic change sorts just after the version it was made from ([Event.autoBase]). That is
+ * a total order, so applying the same rows again changes nothing, and the order rows arrive in doesn't
+ * matter: re-applying old data can never move a row backwards. Tombstones (`deleted_at`) are rows
+ * like any other.
  */
 object Merge {
     /** All synced rows of one data set (a backup file, or later a sync payload). */
@@ -21,6 +23,17 @@ object Merge {
         /** The newest stamp in these rows (stamps sort as text, SPEC §4.1), or null when empty. */
         fun newestHlc(): String? =
             sequenceOf(children, events, segments, presets).flatten().map { it.hlc }.maxOrNull()
+
+        /**
+         * These rows without those stamped after [limitMs] (wall time): rows from a phone whose date is
+         * far ahead. Merged now, they would sort after every change this phone makes to them for days,
+         * so a person's edit here would lose (and, with version vectors, the phones could disagree for
+         * good). Left out, they stay out of this phone's vector and come again once the clocks agree.
+         */
+        fun notAfter(limitMs: Long): Rows {
+            fun <T : Synced> List<T>.ok() = filter { r -> runCatching { HlcStamp.parse(r.hlc).wallMs <= limitMs }.getOrDefault(true) }
+            return Rows(children.ok(), events.ok(), segments.ok(), presets.ok())
+        }
 
         /** Every row's id, for loading the local rows they meet. */
         fun ids(): Ids = Ids(
@@ -51,14 +64,14 @@ object Merge {
             val newest = LinkedHashMap<String, T>()
             for (row in theirs) {
                 val seen = newest[row.id]
-                if (seen == null || row.hlc > seen.hlc) newest[row.id] = row
+                if (seen == null || newer(row, seen)) newest[row.id] = row
             }
             unchanged += theirs.size - newest.size
             return newest.values.mapNotNull { row ->
                 val here = byId[row.id]
                 when {
                     here == null -> { added++; RowChange(null, row) }
-                    row.hlc > here.hlc -> { updated++; RowChange(here, row) }
+                    newer(row, here) -> { updated++; RowChange(here, row) }
                     else -> { unchanged++; null }
                 }
             }
@@ -72,6 +85,13 @@ object Merge {
         )
         return Plan(change, added, updated, unchanged)
     }
+
+    /**
+     * Whether version [a] of a row beats version [b]: the greater [Synced.mergeRank], then the greater
+     * stamp. A total order, so phones converge whatever order versions arrive in.
+     */
+    fun newer(a: Synced, b: Synced): Boolean =
+        a.mergeRank > b.mergeRank || (a.mergeRank == b.mergeRank && a.hlc > b.hlc)
 
     /**
      * Whether [child] is the untouched child a fresh install makes (DECISIONS 2026-11-14): live,

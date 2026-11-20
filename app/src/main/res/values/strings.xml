@@ -2,6 +2,7 @@
 <resources>
     <!-- The one place the display name is defined (CLAUDE.md). The dev flavor overrides it. -->
     <string name="app_name">Mo Stór</string>
+    <!-- No other string spells the name: they take it as an argument (%1$s, or as noted). -->
 
     <!-- Notification channels (SPEC §6.2) -->
     <string name="channel_status">Status</string>
@@ -38,6 +39,12 @@
     <string name="notif_recorded">Recorded: %1$s · %2$s</string>
     <string name="notif_no_end_title">%1$s from %2$s has no end</string>
     <string name="notif_no_end_text">Set it? Tap to choose when it ended</string>
+    <!-- Stopped by the app, not by a person (SPEC §5.5): the give-up and a forgotten pause. -->
+    <string name="notif_auto_title">%1$s from %2$s stopped automatically</string>
+    <string name="notif_auto_no_end_text">It ran too long with no end recorded. Tap to set the end.</string>
+    <string name="notif_auto_paused_text">Paused at %1$s and not resumed, so it ended then. Tap to change it.</string>
+    <string name="sheet_auto_no_end">Ran too long with no end recorded</string>
+    <string name="sheet_auto_paused">Paused at %1$s and not resumed, so it ended then</string>
     <string name="notif_hidden_text">Tap to record</string>
 
     <plurals name="count_wet">
@@ -133,7 +140,10 @@
     <string name="set_meds_every_n">Every N days</string>
     <string name="set_meds_as_needed">As needed</string>
     <string name="set_meds_on">On</string>
-    <string name="set_meds_every">Every %d days</string>
+    <plurals name="set_meds_every">
+        <item quantity="one">Every %d day</item>
+        <item quantity="other">Every %d days</item>
+    </plurals>
     <string name="set_meds_starting">Starting</string>
     <string name="set_meds_weekly_hint">Due every %1$s. A dose given earlier in the week counts.</string>
     <string name="set_shown_med_child">%1$s · %2$s</string>
@@ -165,6 +175,9 @@
     <string name="sheet_ended_earlier">Stopped earlier?</string>
     <string name="sheet_woke_earlier">Woke up earlier?</string>
     <string name="sheet_started_earlier">Started earlier?</string>
+    <string name="sheet_paused_earlier">Paused earlier?</string>
+    <string name="sheet_resumed_earlier">Resumed earlier?</string>
+    <string name="sheet_switched_earlier">Switched earlier?</string>
     <string name="sheet_pick_time">Time…</string>
     <string name="sheet_pick_start">Started at</string>
     <string name="sheet_pick_end">Ended at</string>
@@ -201,7 +214,6 @@
     <string name="sheet_more">+</string>
     <string name="sheet_undone">Undone: %1$s</string>
     <string name="sheet_undo_refused">Can\'t undo: it has changed since</string>
-    <string name="sheet_today">Today: %1$s · %2$s · %3$s</string>
     <string name="sheet_today_list">Today: %1$s</string>
     <string name="sheet_open_app">Open app</string>
     <string name="ok">OK</string>
@@ -256,9 +268,12 @@
     <string name="import_adds">Adds %1$s and %2$s.</string>
     <string name="import_nothing">Nothing new to add.</string>
     <string name="import_skipped">Not read (not supported yet):</string>
-    <string name="import_issue_count">%1$s: the report lists %2$d %3$s, but %4$d were read.</string>
-    <string name="import_what_feeds">feeds</string>
-    <string name="import_what_diapers">diaper changes</string>
+    <!-- %2$s: "3 feeds" or "3 diaper changes"; %3$s: import_read, "2 were read". -->
+    <string name="import_issue_count">%1$s: the report lists %2$s, but %3$s.</string>
+    <plurals name="import_read">
+        <item quantity="one">%d was read</item>
+        <item quantity="other">%d were read</item>
+    </plurals>
     <string name="import_issue_sides">%1$s: some feeds switched side. The report doesn\'t say when, so they are imported as the start side only.</string>
     <string name="import_zone">Times are read in this phone\'s time zone (%1$s).</string>
     <string name="import_action">Import</string>
@@ -300,9 +315,6 @@
     <string name="edit_now">now</string>
     <string name="edit_next_day">%1$s (+1 day)</string>
     <string name="edit_prev_day">%1$s (−1 day)</string>
-    <string name="edit_segment">Segment %1$d</string>
-    <string name="edit_segment_start">Segment %1$d · start</string>
-    <string name="edit_segment_end">Segment %1$d · end</string>
     <string name="edit_remove_segment">Remove segment %1$d</string>
     <string name="edit_add_segment">+ Add segment</string>
     <string name="edit_pause">pause %1$s</string>
@@ -384,6 +396,36 @@
         <item quantity="other">%1$d %2$s</item>
     </plurals>
 
+    <!-- Households on one phone (Phase 5b, SPEC §9.4) -->
+    <string name="household_default">Household %1$d</string>
+    <string name="set_household">Households and phones</string>
+    <string name="household_title">Households and phones</string>
+    <string name="household_name">Name</string>
+    <string name="household_name_hint">Usually the family\'s last name or the address. The name is this phone\'s own: a phone that joins copies it once, and later changes stay on each phone. It shows in the notification and at the top of the app when this phone holds more than one household.</string>
+    <string name="household_list">Households on this phone</string>
+    <string name="household_open">Open now · tap to rename</string>
+    <string name="household_rename">Rename household</string>
+    <string name="household_switch">Switch</string>
+    <string name="household_label_desc">Household: %1$s. Opens the household settings.</string>
+    <string name="household_stop_title">Stop the timer first?</string>
+    <plurals name="household_stop_text">
+        <item quantity="one">A timer is running in %2$s. Stop it and switch to %3$s?</item>
+        <item quantity="other">%1$d timers are running in %2$s. Stop them and switch to %3$s?</item>
+    </plurals>
+    <string name="household_stop_switch">Stop and switch</string>
+    <string name="household_add">+ Add a household</string>
+    <string name="household_add_title">Add a household</string>
+    <string name="household_add_text">A household of its own on this phone, with one child and no records, for example a family you care for that doesn\'t use the app. It syncs with no other phone unless you invite one. The phone switches to it.</string>
+    <string name="household_add_create">Add</string>
+    <string name="household_delete_section">Delete %1$s</string>
+    <string name="household_delete">Delete this household</string>
+    <string name="household_delete_hint">Deletes this household and all its records from this phone, for good. Save a backup first if you may need them again.</string>
+    <string name="household_delete_shared">Other phones still sync with this household. To delete it from this phone, first leave it with \"Leave household\" above.</string>
+    <string name="household_delete_title">Delete %1$s?</string>
+    <string name="household_delete_text">Every child, record and med of %1$s is deleted from this phone, for good. This can\'t be undone. The phone then switches to %2$s.</string>
+    <string name="household_delete_parting">It left a household with Leave now, and that household hasn\'t heard yet that it left. Its phones keep trying to reach it until someone removes it there.</string>
+    <string name="household_backup">Save a backup</string>
+
     <!-- Settings (Phase 2) -->
     <string name="set_children">Children</string>
     <string name="set_add_child">+ Add a child</string>
@@ -402,7 +444,7 @@
     <string name="set_default_pump">Pump starts at</string>
     <string name="set_last_used">Last used</string>
     <string name="set_timers">Timers</string>
-    <string name="set_timers_hint">“Nudge” asks “Still feeding?”. “Give up” stores the end as unknown. Both count from the start.</string>
+    <string name="set_timers_hint">“Nudge” asks “Still feeding?”. “Give up” stores the end as unknown. Both count from the start; a feed’s pauses don’t count.</string>
     <string name="set_feed_nudge">Feed: nudge after</string>
     <string name="set_feed_give_up">Feed: give up after</string>
     <string name="set_sleep_nudge">Sleep: nudge after</string>
@@ -441,8 +483,8 @@
     <string name="backup_import_title">Import a backup</string>
     <string name="backup_reading">Reading the backup…</string>
     <string name="backup_importing">Importing…</string>
-    <string name="backup_not_a_backup">That file isn\'t a Mo Stór backup.</string>
-    <string name="backup_newer">That backup was made by a newer version of Mo Stór. Update the app on this phone first.</string>
+    <string name="backup_not_a_backup">That file isn\'t a %1$s backup.</string>
+    <string name="backup_newer">That backup was made by a newer version of %1$s. Update the app on this phone first.</string>
     <string name="backup_has">The backup has %1$s and %2$s.</string>
     <string name="backup_made">Exported %1$s.</string>
     <string name="backup_other">It also changes children or meds.</string>
@@ -495,8 +537,8 @@
     <string name="copy_restore_title">Restore from a copy</string>
     <string name="copy_reading">Reading the copy…</string>
     <string name="copy_restoring">Restoring…</string>
-    <string name="copy_not_a_copy">That file isn\'t a copy of Mo Stór\'s data.</string>
-    <string name="copy_newer">That copy was made by a newer version of Mo Stór. Update the app on this phone first.</string>
+    <string name="copy_not_a_copy">That file isn\'t a copy of %1$s\'s data.</string>
+    <string name="copy_newer">That copy was made by a newer version of %1$s. Update the app on this phone first.</string>
     <string name="copy_has">The copy has %1$s and %2$s.</string>
     <string name="copy_newest">Newest record: %1$s.</string>
     <string name="copy_replaces">They replace this phone\'s %1$s and %2$s. This phone\'s settings stay as they are. This can\'t be undone.</string>
@@ -515,31 +557,52 @@
         <item quantity="other">Restored. This phone now has %d records.</item>
     </plurals>
     <string name="set_about">About</string>
-    <string name="set_sync">Sync</string>
-    <string name="set_sync_open">Phones and sync</string>
     <string name="set_sync_hint">Share records with up to a few phones over Bluetooth, phone to phone. Nothing goes through the Internet.</string>
-    <string name="sync_title">Phones and sync</string>
     <string name="sync_intro">Phones that share records sync over Bluetooth when they are near each other. Each phone keeps all the records; nothing goes through the Internet.</string>
-    <string name="sync_permission">To find the other phone, Mo Stór needs the \"Nearby devices\" permission. It isn\'t used for location.</string>
+    <string name="sync_permission">To find the other phone, %1$s needs the \"Nearby devices\" permission. It isn\'t used for location.</string>
     <string name="sync_permission_button">Allow nearby devices</string>
     <string name="sync_bluetooth_off">Bluetooth is off.</string>
     <string name="sync_bluetooth_on">Turn on Bluetooth</string>
-    <string name="sync_phones">Phones</string>
-    <string name="sync_none">No other phone yet. To add one, open Mo Stór on both phones and keep them close: \"Add a phone\" on a phone that has your records, \"Join a phone\" on the other.</string>
+    <string name="sync_phones">Phones in %1$s</string>
+    <string name="sync_none">No other phone yet. To share records, open %1$s on both phones and keep them close: \"Invite a phone\" on the phone that has your records, \"Join a household\" on the other.</string>
+    <string name="sync_household_section">Invite, join or leave</string>
+    <string name="sync_add_hint">Adds another phone to %1$s. On that phone, tap \"Join a household\". Keep both phones close.</string>
+    <string name="sync_leave_hint">This phone stops syncing %1$s with the other phones. The records stay here.</string>
+    <string name="sync_leave_now_hint">Don\'t wait for another phone: this phone leaves now and tells them later.</string>
     <string name="sync_last">Last synced %1$s</string>
     <string name="sync_never">Not synced yet</string>
     <string name="sync_last_failed">The last try didn\'t finish</string>
     <string name="sync_now">Sync now</string>
-    <string name="sync_add">Add a phone</string>
-    <string name="sync_join">Join a phone</string>
-    <string name="sync_join_hint">Joining makes this phone part of the other phone\'s household. Its own records are kept and shared too.</string>
-    <string name="sync_forget">Forget</string>
-    <string name="sync_forget_title">Forget %1$s?</string>
-    <string name="sync_forget_text">This phone stops syncing with it. Records already here stay. To sync again, add it again.</string>
-    <string name="sync_waiting_title">Add a phone</string>
-    <string name="sync_waiting">On the other phone, open Mo Stór › Settings › Phones and sync › Join a phone. Keep both phones close.</string>
-    <string name="sync_searching_title">Join a phone</string>
-    <string name="sync_searching">Looking for the phone that is adding… On it, open Settings › Phones and sync › Add a phone.</string>
+    <string name="sync_add">Invite a phone</string>
+    <string name="sync_join">Join a household</string>
+    <string name="sync_join_hint">Joins the household of a phone that is inviting. You then choose whether %1$s joins it too or stays apart on this phone.</string>
+    <string name="sync_join_title">Join a household</string>
+    <string name="sync_join_merge">Merge this phone\'s children</string>
+    <string name="sync_join_merge_hint">You\'ve both been logging the same baby: the records in %1$s join the household, and you say which children are the same.</string>
+    <string name="sync_join_apart">Keep this phone\'s records apart</string>
+    <string name="sync_join_apart_hint">The household gets its own place on this phone, next to %1$s, which stays as it is. Switch between them in Settings › Households and phones.</string>
+    <string name="sync_join_shared">%1$s syncs with other phones, so it can\'t be merged into another household. Joining keeps it apart.</string>
+    <string name="sync_join_go">Join</string>
+    <string name="sync_forget">Remove</string>
+    <string name="sync_forget_title">Remove %1$s from %2$s?</string>
+    <string name="sync_forget_text">%1$s stops syncing %2$s, on every phone. It keeps the records it already has, and records already here stay. To sync with it again, invite it again.</string>
+    <string name="sync_this_phone">This phone</string>
+    <string name="sync_added_by">Added by %1$s · %2$s</string>
+    <string name="sync_removed_notice">%1$s removed this phone from the household. The records stay here in %2$s, which no longer syncs with the other phones.</string>
+    <string name="sync_left_notice">This phone left the household. The records stay here in %1$s, which no longer syncs with the other phones.</string>
+    <string name="sync_left_later_notice">This phone left the household. No other phone was nearby, so it tells them the next time one is, within 30 days. The records stay here in %1$s.</string>
+    <string name="sync_departed">%1$s left %2$s · %3$s</string>
+    <string name="sync_leave">Leave household</string>
+    <string name="sync_leave_title">Leave %1$s?</string>
+    <string name="sync_leave_text">This phone syncs once more, so the other phones get its last records and take it off their list. If none is nearby, it leaves anyway and tells them the next time one is. Its records stay here as a household of its own, and the other phones keep theirs.</string>
+    <string name="sync_leaving">Leaving %1$s… This finishes when this phone next reaches one of the other phones.</string>
+    <string name="sync_leave_now">Leave now</string>
+    <string name="sync_leave_now_title">Leave now?</string>
+    <string name="sync_leave_now_text">This phone leaves the household now. It tells the other phones the next time one of them is nearby, within 30 days, and hands over the records it made before leaving. Until then they keep trying to reach it.</string>
+    <string name="sync_waiting_title">Invite a phone</string>
+    <string name="sync_waiting">On the other phone, open %2$s › Settings › Households and phones › Join a household. It joins %1$s. Keep both phones close.</string>
+    <string name="sync_searching_title">Join a household</string>
+    <string name="sync_searching">Looking for the phone that is inviting… On it, open Settings › Households and phones › Invite a phone.</string>
     <string name="sync_connecting">Connecting…</string>
     <string name="sync_code_title">Check the code</string>
     <string name="sync_code_text">Does the other phone show the same code?</string>
@@ -551,23 +614,31 @@
     <string name="sync_match_different">A different child</string>
     <string name="sync_match_done">Done</string>
     <string name="sync_syncing">Syncing…</string>
-    <string name="sync_paired">Paired with %1$s. It syncs when the phones are near each other.</string>
-    <string name="sync_synced">Synced with %1$s.</string>
+    <string name="sync_paired">%1$s joined %2$s. The phones sync when they are near each other.</string>
+    <string name="sync_synced">Synced %1$s with %2$s.</string>
+    <string name="sync_synced_missed">Synced %1$s with %2$s. Not reached: %3$s.</string>
     <string name="sync_failed_title">Sync</string>
-    <string name="sync_failed_no_phone">No phone was found. Keep both phones close, with Bluetooth on and Mo Stór open on both.</string>
+    <string name="sync_failed_no_phone">No phone was found. Keep both phones close, with Bluetooth on and %1$s open on both.</string>
     <string name="sync_failed_codes">The codes weren\'t confirmed, so the phones didn\'t pair.</string>
     <string name="sync_failed_connection">The connection was lost. Try again with the phones close together.</string>
     <string name="sync_failed_no_answer">No paired phone answered. Is it nearby, with Bluetooth on?</string>
     <string name="sync_failed_bluetooth">Turn on Bluetooth and allow \"Nearby devices\" first.</string>
+    <string name="sync_failed_already_there">The other phone is already in %1$s, as another of its households. Nothing changed.</string>
+    <string name="sync_already_in">This phone is already in that household: here it is %1$s. Nothing changed. To use it, switch to it under Households on this phone.</string>
+    <string name="sync_already_in_this">This phone is already in that household. Nothing changed.</string>
     <string name="battery_section">Sync with the app closed</string>
-    <string name="battery_hint">So that this phone syncs also when Mo Stór is closed, set its battery use to Unrestricted: tap below, then Battery › Unrestricted.</string>
+    <string name="battery_hint">So that this phone syncs also when %1$s is closed, set its battery use to Unrestricted: tap below, then Battery › Unrestricted.</string>
     <string name="battery_ok">Battery use is Unrestricted.</string>
     <string name="battery_open_app">Open battery use</string>
-    <string name="battery_samsung_hint">On a Samsung phone, also add Mo Stór to Never sleeping apps: Battery › Background usage limits › Never sleeping apps › +.</string>
+    <string name="battery_samsung_hint">On a Samsung phone, also add %1$s to Never sleeping apps: Battery › Background usage limits › Never sleeping apps › +.</string>
     <string name="battery_open_samsung">Open Samsung battery settings</string>
     <string name="conflict_title">%1$d %2$s timers running</string>
     <string name="conflict_starts">Started %1$s and %2$s</string>
     <string name="conflict_question">Which one counts?</string>
+    <!-- The two-timers text: when they started (conflict_starts), then the question. -->
+    <string name="conflict_text">%1$s. %2$s</string>
+    <!-- Between items of a list, before the last one: "14:02, 14:05 and 14:09". -->
+    <string name="list_separator">", "</string>
     <string name="conflict_keep_earlier">Keep earlier</string>
     <string name="conflict_keep_later">Keep later</string>
     <string name="conflict_keep_both">Keep both</string>
@@ -589,6 +660,8 @@
     <string name="child_cm">cm</string>
     <string name="child_in">in</string>
     <string name="child_color">Color</string>
+    <!-- Read by a screen reader for each color swatch in the child editor. -->
+    <string name="child_color_cd">Color %1$d</string>
     <string name="child_archive">Archive</string>
     <string name="child_unarchive">Bring back</string>
     <string name="child_archive_hint">Archived: off the quick sheet, still in the log.</string>
@@ -608,7 +681,7 @@
     <string name="about_no_internet">This app can\'t reach the Internet: it doesn\'t ask for the permission, and the build fails if anything adds it. Everything stays on the phones.</string>
     <string name="about_check">To check: Android\'s App info screen doesn\'t list the Internet permission for any app, so it can\'t show this. On a computer, run “apkanalyzer manifest permissions” on the APK, or use an app that lists other apps\' permissions.</string>
     <string name="about_licences_title">Licenses</string>
-    <string name="about_free_software">Mo Stór is free software: you can share and change it under the GNU General Public License, version 3 or later. The source code is at github.com/uirlisi/mo-stor.</string>
+    <string name="about_free_software">%1$s is free software: you can share and change it under the GNU General Public License, version 3 or later. The source code is at github.com/uirlisi/mo-stor.</string>
     <string name="about_licences">Kotlin, Kotlin coroutines, AndroidX (Core, Activity, Lifecycle, Room) and Jetpack Compose with Material 3: Apache License 2.0. Icons: Material Icons by Google, Apache License 2.0.</string>
 
     <!-- Launcher shortcuts (Phase 2) -->
@@ -633,9 +706,11 @@
     <string name="chart_before_first">No records before %1$s</string>
     <string name="chart_so_far">%1$s, so far</string>
     <string name="chart_sum_sleep">sleep %1$s</string>
-    <string name="chart_sum_bottles">%1$d bottles · %2$s</string>
+    <plurals name="chart_sum_bottles">
+        <item quantity="one">%1$d bottle · %2$s</item>
+        <item quantity="other">%1$d bottles · %2$s</item>
+    </plurals>
     <string name="chart_sum_pump">pumped %1$s</string>
-    <string name="chart_no_end">no end</string>
     <string name="chart_axis_am">%1$da</string>
     <string name="chart_axis_pm">%1$dp</string>
     <string name="stats_breast_time">Breast time per day</string>
@@ -658,7 +733,11 @@
     <string name="stats_poop_mixed">Poopy includes mixed diapers.</string>
     <string name="stats_given_times">%1$s ×%2$d</string>
     <string name="stats_wet_mixed">Wet includes mixed diapers.</string>
-    <string name="stats_supplement_days">%1$s: given on %2$d of %3$d days</string>
+    <!-- The quantity is the number of days (%3$d). -->
+    <plurals name="stats_supplement_days">
+        <item quantity="one">%1$s: given on %2$d of %3$d day</item>
+        <item quantity="other">%1$s: given on %2$d of %3$d days</item>
+    </plurals>
     <string name="chart_axis_hours">%1$dh</string>
     <string name="chart_part">%1$s %2$s</string>
 </resources>

@@ -5,6 +5,7 @@ import io.github.uirlisi.mostor.core.Child
 import io.github.uirlisi.mostor.core.Event
 import io.github.uirlisi.mostor.core.EventStatus
 import io.github.uirlisi.mostor.core.Kind
+import io.github.uirlisi.mostor.core.Member
 import io.github.uirlisi.mostor.core.Side
 import io.github.uirlisi.mostor.core.MedSchedule
 import io.github.uirlisi.mostor.core.SupplementPreset
@@ -28,6 +29,7 @@ fun EventEntity.toModel() = Event(
     updatedAt = updatedAt,
     deletedAt = deletedAt,
     hlc = hlc,
+    autoBase = autoBase,
 )
 
 fun Event.toEntity() = EventEntity(
@@ -49,6 +51,7 @@ fun Event.toEntity() = EventEntity(
     updatedAt = updatedAt,
     deletedAt = deletedAt,
     hlc = hlc,
+    autoBase = autoBase,
 )
 
 fun SegmentEntity.toModel() = BreastSegment(
@@ -140,3 +143,7 @@ fun Child.toEntity() = ChildEntity(
     deletedAt = deletedAt,
     hlc = hlc,
 )
+
+fun MemberEntity.toModel() = Member(deviceId, name, addedBy, addedAt, removedAt, removedBy, hlc)
+
+fun Member.toEntity() = MemberEntity(deviceId, name, addedBy, addedAt, removedAt, removedBy, hlc)

@@ -7,7 +7,6 @@ import android.util.Log
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -31,10 +30,17 @@ object BackupFiles {
     /** mostor-2026-11-14-0916.csv */
     fun csv(context: Context) = "${prefix(context)}-${STAMP.format(LocalDateTime.now())}.csv"
 
-    /** mostor-daily-2026-11-14.json: the daily backup, of which the newest [AutoExport.KEEP] are kept. */
-    fun daily(context: Context, day: LocalDate) = "${prefix(context)}-daily-$day.json"
+    /**
+     * mostor-daily-2026-11-14.json: the daily backup, of which the newest [AutoExport.KEEP] are kept.
+     * A household other than the first has its [tag] in the name (mostor-h2-daily-…), so households
+     * backing up to one folder never overwrite or prune each other's files (SPEC §9.4).
+     */
+    fun daily(context: Context, day: LocalDate, tag: String? = null) = "${prefix(context, tag)}-daily-$day.json"
 
-    fun dailyPattern(context: Context) = Regex("^${Regex.escape(prefix(context))}-daily-\\d{4}-\\d{2}-\\d{2}\\.json$")
+    fun dailyPattern(context: Context, tag: String? = null) =
+        Regex("^${Regex.escape(prefix(context, tag))}-daily-\\d{4}-\\d{2}-\\d{2}\\.json$")
+
+    private fun prefix(context: Context, tag: String?) = prefix(context) + (tag?.let { "-$it" } ?: "")
 
     /** The app's version for the backup's `app_version` field. */
     fun appVersion(context: Context): String =
@@ -56,10 +62,18 @@ object BackupFiles {
  */
 class AutoExport(
     private val context: Context,
-    private val repository: () -> Repository,
+    /**
+     * The active household's database and its tag for the daily backup's file names (null for the
+     * first household), read together once per run: a switch during a run must not write one
+     * household's records under the other's name, or prune the other's files.
+     */
+    private val active: () -> Target,
     private val scope: CoroutineScope,
 ) {
-    private val running = AtomicBoolean(false)
+    data class Target(val repository: Repository, val tag: String?)
+
+    /** The households (by tag) with a run under way: one run per household, not one for all. */
+    private val running = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     /** A failed attempt isn't retried within this long, so a broken folder doesn't retry on every write. */
     @Volatile
@@ -79,15 +93,17 @@ class AutoExport(
 
     /** Runs now if due (or, with [force], anyway: "Back up now"). */
     suspend fun runIfDue(force: Boolean): Result {
-        val repo = repository()
+        val target = active()
+        val repo = target.repository
+        val key = target.tag.orEmpty()
         val settings = repo.settings()
         val folder = settings.autoExportUri ?: return Result.Off
         val today = LocalDate.now()
         if (!force && settings.autoExportLast == today.toString()) return Result.NotDue
         if (!force && System.currentTimeMillis() - lastFailureAt < RETRY_AFTER_MS) return Result.NotDue
-        if (!running.compareAndSet(false, true)) return Result.NotDue
+        if (!running.add(key)) return Result.NotDue
         return try {
-            withContext(Dispatchers.IO) { writeDaily(Uri.parse(folder), today, repo) }
+            withContext(Dispatchers.IO) { writeDaily(Uri.parse(folder), today, repo, target.tag) }
             repo.setSettingsQuietly(mapOf(Keys.AUTO_EXPORT_LAST to today.toString(), Keys.AUTO_EXPORT_STATUS to "ok"))
             Result.Written
         } catch (e: Exception) {
@@ -96,14 +112,14 @@ class AutoExport(
             repo.setSettingsQuietly(mapOf(Keys.AUTO_EXPORT_STATUS to "failed"))
             Result.Failed
         } finally {
-            running.set(false)
+            running.remove(key)
         }
     }
 
-    private suspend fun writeDaily(tree: Uri, day: LocalDate, repo: Repository) {
+    private suspend fun writeDaily(tree: Uri, day: LocalDate, repo: Repository, tag: String?) {
         val resolver = context.contentResolver
         val folder = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
-        val name = BackupFiles.daily(context, day)
+        val name = BackupFiles.daily(context, day, tag)
         val existing = children(tree).firstOrNull { it.second == name }?.first
         val target = existing?.let { DocumentsContract.buildDocumentUriUsingTree(tree, it) }
             ?: DocumentsContract.createDocument(resolver, folder, BackupFiles.JSON_MIME, name)
@@ -112,7 +128,7 @@ class AutoExport(
         BackupFiles.write(context, target, json)
 
         // Keep the newest daily files (by the date in their names); only this app's daily files go.
-        val pattern = BackupFiles.dailyPattern(context)
+        val pattern = BackupFiles.dailyPattern(context, tag)
         children(tree).filter { pattern.matches(it.second) }
             .sortedByDescending { it.second }
             .drop(KEEP)

@@ -81,6 +81,12 @@ interface Synced {
     val updatedAt: Long
     val deletedAt: Long?
     val hlc: String
+
+    /**
+     * Where this version sorts when two versions of the row meet ([Merge.plan]): its stamp, except for
+     * an automatic change ([Event.autoBase]), which sorts just after the version it was made from.
+     */
+    val mergeRank: String get() = hlc
 }
 
 data class Child(
@@ -118,8 +124,18 @@ data class Event(
     override val updatedAt: Long,
     override val deletedAt: Long? = null,
     override val hlc: String,
+    /**
+     * Set only on a change no one made: a timer given up as "end unknown", or a forgotten pause ended at
+     * the pause (SPEC §5.5). It holds the stamp of the version the phone changed automatically. When the
+     * versions meet, any version newer than that one wins, though its own stamp may be older: a phone
+     * out of range, which never saw a stop made elsewhere, mustn't overwrite it (SPEC §9.5). Any later
+     * change by a person clears it.
+     */
+    val autoBase: String? = null,
 ) : Synced {
     val isLive: Boolean get() = deletedAt == null
+
+    override val mergeRank: String get() = autoBase ?: hlc
 }
 
 data class BreastSegment(

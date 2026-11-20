@@ -33,6 +33,10 @@ interface EventDao {
     @Query("SELECT * FROM event WHERE status = 'end_unknown' AND deleted_at IS NULL $LIVE_CHILD AND start_at >= :since ORDER BY start_at DESC")
     suspend fun endUnknownSince(since: Long): List<EventEntity>
 
+    /** Ended automatically (a forgotten pause, SPEC §5.5) and not changed by anyone since. */
+    @Query("SELECT * FROM event WHERE status = 'ended' AND auto_base IS NOT NULL AND deleted_at IS NULL $LIVE_CHILD AND end_at >= :since ORDER BY end_at DESC")
+    suspend fun endedAutomaticallySince(since: Long): List<EventEntity>
+
     @Query(
         "SELECT * FROM event WHERE child_id = :childId AND kind IN (:kinds) AND deleted_at IS NULL " +
             "ORDER BY start_at DESC, created_at DESC LIMIT 1",
@@ -161,9 +165,6 @@ interface SettingDao {
 
     @Query("DELETE FROM setting WHERE `key` = :key")
     suspend fun delete(key: String)
-
-    @Query("DELETE FROM setting WHERE `key` LIKE :prefix || '%'")
-    suspend fun deleteWithPrefix(prefix: String)
 }
 
 @Dao
@@ -208,5 +209,17 @@ interface PeerDao {
     suspend fun delete(deviceId: String)
 
     @Query("DELETE FROM peer")
+    suspend fun deleteAll()
+}
+
+@Dao
+interface MemberDao {
+    @Query("SELECT * FROM member ORDER BY added_at, device_id")
+    suspend fun all(): List<MemberEntity>
+
+    @Upsert
+    suspend fun upsert(rows: List<MemberEntity>)
+
+    @Query("DELETE FROM member")
     suspend fun deleteAll()
 }

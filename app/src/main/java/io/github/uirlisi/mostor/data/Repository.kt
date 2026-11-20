@@ -1,5 +1,6 @@
 package io.github.uirlisi.mostor.data
 
+import android.content.ContentValues
 import android.database.sqlite.SQLiteDatabase
 import androidx.room.withTransaction
 import io.github.uirlisi.mostor.core.BabyTracker
@@ -11,33 +12,18 @@ import io.github.uirlisi.mostor.core.ChildChoice
 import io.github.uirlisi.mostor.core.Child
 import io.github.uirlisi.mostor.core.ChildFields
 import io.github.uirlisi.mostor.core.Children
-import io.github.uirlisi.mostor.core.DayTotals
 import io.github.uirlisi.mostor.core.DayClock
-import io.github.uirlisi.mostor.core.DayCounts
-import io.github.uirlisi.mostor.core.DaySummary
 import io.github.uirlisi.mostor.core.Diaper
-import io.github.uirlisi.mostor.core.Duplicates
-import io.github.uirlisi.mostor.core.Durations
 import io.github.uirlisi.mostor.core.EditProblem
 import io.github.uirlisi.mostor.core.Event
 import io.github.uirlisi.mostor.core.EventDraft
 import io.github.uirlisi.mostor.core.EventEdit
 import io.github.uirlisi.mostor.core.EventStatus
-import io.github.uirlisi.mostor.core.Feeds
-import io.github.uirlisi.mostor.core.HlcStamp
 import io.github.uirlisi.mostor.core.HybridClock
-import io.github.uirlisi.mostor.core.Ids
 import io.github.uirlisi.mostor.core.Kind
-import io.github.uirlisi.mostor.core.Dose
-import io.github.uirlisi.mostor.core.MedDay
 import io.github.uirlisi.mostor.core.MedPlan
-import io.github.uirlisi.mostor.core.MedStatus
-import io.github.uirlisi.mostor.core.Meds
 import io.github.uirlisi.mostor.core.Merge
-import io.github.uirlisi.mostor.core.ChildMatch
-import io.github.uirlisi.mostor.core.Sync
 import io.github.uirlisi.mostor.sync.KeyVault
-import io.github.uirlisi.mostor.sync.SyncStore
 import io.github.uirlisi.mostor.core.CsvExport
 import io.github.uirlisi.mostor.core.RowChange
 import io.github.uirlisi.mostor.core.Overrun
@@ -49,26 +35,19 @@ import io.github.uirlisi.mostor.core.SupplementPreset
 import io.github.uirlisi.mostor.core.TimedEvent
 import io.github.uirlisi.mostor.core.Timers
 import io.github.uirlisi.mostor.core.Undo
-import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Locale
 import io.github.uirlisi.mostor.core.ChartFocus
-import io.github.uirlisi.mostor.core.Patterns
-import io.github.uirlisi.mostor.core.Series
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.conflate
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 /** Called after every committed write (CLAUDE.md: every write refreshes the status notification). */
 fun interface StatusSink {
     suspend fun refresh()
 }
 
-/** Where an action was made. Notification actions get the 60 s "Recorded · Undo" line (SPEC §5.7). */
+/** Where an action was made. Notification actions get the 10 s "Recorded · Undo" line (SPEC §5.7). */
 enum class Source(val code: String) {
     SHEET("sheet"),
     NOTIFICATION("notification"),
@@ -77,111 +56,6 @@ enum class Source(val code: String) {
 
 /** A committed user action: what to show in the confirmation strip, and how to undo it. */
 data class Done(val undoId: String, val info: ActionInfo)
-
-data class RunningTimer(val timed: TimedEvent, val overrun: OverrunState)
-
-data class RecentAction(val undoId: String, val info: ActionInfo, val createdAt: Long)
-
-/** The 3am answers for one child: what the notification shows per child. */
-data class ChildStatus(
-    val child: Child,
-    val lastFeed: Event?,
-    val lastSide: Side?,
-    val lastFeedMs: Long?,
-    val awakeSince: Long?,
-    val today: DayCounts,
-)
-
-/** Everything the status notification and the quick sheet show. */
-/** "Synced with Galaxy S22 · 4m ago". */
-data class LastSync(val peerName: String, val at: Long)
-
-data class HomeState(
-    val now: Long,
-    /** The active child: what the quick sheet records for. */
-    val childId: String,
-    /** Active (not archived) children, in order. Child UI shows only when there are several. */
-    val children: List<Child>,
-    /** Every live child by id, archived ones included (names on running timers). */
-    val childrenById: Map<String, Child>,
-    /** The other active children's answers, for the notification's per-child lines. */
-    val others: List<ChildStatus>,
-    /** Most recently started first. */
-    val running: List<RunningTimer>,
-    /** Ends marked unknown in the last day whose notification hasn't been dismissed. */
-    val noEnd: List<TimedEvent>,
-    val presets: List<SupplementPreset>,
-    val lastFeed: Event?,
-    /** The side of the last segment of the most recent breast feed. */
-    val lastSide: Side?,
-    /** How long the last feed lasted: null for a bottle, a running feed or an unknown end. */
-    val lastFeedMs: Long?,
-    val awakeSince: Long?,
-    val lastDiaper: Event?,
-    val lastPump: Event?,
-    /** The active child's meds' status today (SPEC §5.10), by preset id. */
-    val meds: Map<String, MedStatus>,
-    /** Supplement preset id → when it was last given today. */
-    val supplementsToday: Map<String, Long>,
-    val today: DayCounts,
-    /** The last notification action, for 60 s. */
-    val recent: RecentAction?,
-    val settings: SettingsSnapshot,
-    /** When the notification must be redrawn next (overrun, day change, end of the Undo line). */
-    val nextWakeAt: Long?,
-    /** The most recent sync with another phone (Phase 5), or null before the first. */
-    val lastSync: LastSync? = null,
-    /** Running timers of one kind for one child, after a sync (SPEC §9.5); the owner chooses. */
-    val conflicts: List<io.github.uirlisi.mostor.core.TimerConflict> = emptyList(),
-) {
-    val severalChildren: Boolean get() = children.size > 1
-
-    /** The child to name on a record: only when there are several children. */
-    fun childOf(childId: String): Child? = if (severalChildren) childrenById[childId] else null
-
-    /** A child's place among all live children: picks its color when it has none of its own. */
-    fun colorIndex(childId: String): Int = childrenById.keys.indexOf(childId)
-}
-
-/** One child's day summary on Today ([child] is null with a single child), with its Meds row. */
-data class ChildTotals(val child: Child?, val totals: DayTotals, val meds: MedDay? = null)
-
-data class DayView(
-    val day: LocalDate,
-    val isToday: Boolean,
-    val endMs: Long,
-    val items: List<DayItem>,
-    val counts: DayCounts,
-    val totals: List<ChildTotals>,
-    /** Records left out because they are hidden on this phone. */
-    val hiddenCount: Int,
-    /** The children shown (Phase 3c: one, several or all), in the app's child order. */
-    val childIds: List<String>,
-) {
-    /** Several children are shown: summary cards and timeline rows name their child. */
-    val several: Boolean get() = childIds.size > 1
-}
-
-/** A log line: an event, with its segments when it's a timed event, and possible duplicates (SPEC §5.6). */
-data class DayItem(val event: Event, val timed: TimedEvent?, val duplicates: Set<String> = emptySet())
-
-/** Log filters (SPEC §6.5). Null, or no children, means any. */
-data class LogFilter(
-    /** The children to show (Phase 3c: several at once). */
-    val childIds: Set<String> = emptySet(),
-    val kind: Kind? = null,
-    val subtype: String? = null,
-    val showHidden: Boolean = false,
-)
-
-data class LogDay(val day: LocalDate, val items: List<DayItem>)
-
-data class LogView(
-    val days: List<LogDay>,
-    /** Whether there are records before the loaded range. */
-    val hasOlder: Boolean,
-    val hiddenCount: Int,
-)
 
 /** An event as loaded into the edit screen. */
 data class Editing(val event: Event, val segments: List<BreastSegment>)
@@ -205,74 +79,42 @@ sealed interface SaveResult {
 /**
  * The only class that writes to the database (CLAUDE.md). Writes are serialized, each runs in one
  * transaction, stamps fresh HLCs, stores an undo entry, and then refreshes the notification.
+ *
+ * Recording, editing, children, meds, settings, restore, backup and import live here. The household
+ * and sync are [sync]; the reads are [Views], reached through the read methods below. All three
+ * share one [DataCore] (the write lock and transaction, the clock, settings).
  */
 class Repository(
     private val db: MoStorDb,
-    private val sink: StatusSink,
+    sink: StatusSink,
     private val wallClock: () -> Long = System::currentTimeMillis,
     private val zone: () -> ZoneId = ZoneId::systemDefault,
-    private val locale: () -> Locale = Locale::getDefault,
+    locale: () -> Locale = Locale::getDefault,
     /**
      * This install's id from a file Android never backs up (null: no check, as in tests that don't
      * need it). Compared with the copy in the database to notice a database moved from another phone.
      */
-    private val installId: (() -> String)? = null,
+    installId: (() -> String)? = null,
     /** Wraps the household key at rest (Phase 5); null in tests that don't sync. */
-    private val vault: KeyVault? = null,
-) : SyncStore {
-    private val writeLock = Mutex()
-    private val initLock = Mutex()
+    vault: KeyVault? = null,
+) {
+    private val core = DataCore(db, sink, wallClock, zone, locale, installId)
+    private val views = Views(core)
 
-    @Volatile
-    private var clock: HybridClock? = null
+    /** The household, its phones, and the sync session's view of the data (SPEC §9, Phase 5). */
+    val sync = HouseholdSync(core, vault)
 
-    private inner class Cx(override val now: Long, override val tz: String, private val hlc: HybridClock) : ChangeContext {
-        override fun newId(): String = Ids.uuidV7(now)
-        override fun nextHlc(): String = hlc.now().encode()
-
-        /** Moves this phone's clock past a stamp from elsewhere, so later changes sort after it. */
-        fun observe(stamp: HlcStamp) {
-            hlc.receive(stamp)
+    /** Called after this phone changed synced rows itself (Phase 5: sync on change). */
+    var onLocalChange: (() -> Unit)?
+        get() = core.onLocalChange
+        set(value) {
+            core.onLocalChange = value
         }
-    }
 
     // ---- Setup ----
 
     /** Creates this phone's id and the implicit child with their seeded meds on first use. */
-    suspend fun ensureInitialized(): HybridClock {
-        clock?.let { return it }
-        return initLock.withLock {
-            clock ?: db.withTransaction {
-                val now = wallClock()
-                var meta = db.meta().get()
-                    ?: MetaEntity(deviceId = Ids.uuidV7(now), deviceName = null, hlc = null).also { db.meta().upsert(it) }
-                installId?.let { read ->
-                    val mine = read()
-                    val stored = db.settings().get(Keys.INSTALL_ID)
-                    if (stored != null && stored != mine) {
-                        // The database came from another phone (a phone-to-phone transfer): this phone
-                        // takes its own device id, so its changes are never taken for the other
-                        // phone's. The clock keeps its time, so later stamps still sort after the old.
-                        meta = meta.copy(deviceId = Ids.uuidV7(now)).also { db.meta().upsert(it) }
-                        // Its household key can't be opened here, and its peers know the old id:
-                        // this phone pairs again (SPEC §9.4).
-                        for (key in listOf(Keys.HOUSEHOLD_ID, Keys.HOUSEHOLD_KEY, Keys.SYNC_PENDING_MATCH)) db.settings().delete(key)
-                        db.peers().deleteAll()
-                    }
-                    if (stored != mine) db.settings().put(SettingEntity(Keys.INSTALL_ID, mine))
-                }
-                val c = HybridClock(meta.deviceId, meta.hlc?.let(HlcStamp::parse), wallClock)
-                // The implicit first child, with their own Vit D and Vit K (schema version 2).
-                if (db.children().countLive() == 0) {
-                    val child = Child(id = Ids.uuidV7(now), createdAt = now, updatedAt = now, hlc = c.now().encode())
-                    db.children().upsert(listOf(child.toEntity()))
-                    db.presets().upsert(Presets.seeds(child.id, now).map { it.toEntity() })
-                }
-                c.last?.let { db.meta().setHlc(it.encode()) }
-                c
-            }.also { clock = it }
-        }
-    }
+    suspend fun ensureInitialized(): HybridClock = core.ensureInitialized()
 
     // ---- Recording (SPEC §6.3) ----
 
@@ -344,6 +186,14 @@ class Repository(
         forgetTimerState(eventId)
         val verb = if (t.event.status == EventStatus.END_UNKNOWN) Verb.SET_END else Verb.STOP
         commit(change, ActionInfo(verb, t.event.kind, eventId, end), source, cx)
+    }
+
+    /** "Set end…" on a timer that ended automatically at its pause: moves its end to [at]. */
+    suspend fun moveEnd(eventId: String, at: Long, source: Source): Done? = write { cx ->
+        val t = timedById(eventId) ?: return@write null
+        val change = Timers.moveEnd(t, at, cx)
+        val end = change.events.firstOrNull()?.after?.endAt ?: return@write null
+        commit(change, ActionInfo(Verb.SET_END, t.event.kind, eventId, end), source, cx)
     }
 
     /** Discards a timer that shouldn't count (undoable). */
@@ -455,6 +305,13 @@ class Repository(
         val presets = payload.change.presets.associate { it.after.id to db.presets().preset(it.after.id)?.toModel() }
         val change = Undo.revert(payload.change, { events[it] }, { segments[it] }, cx, { children[it] }, { presets[it] })
             ?: return@write false
+        // Locally at most one timer runs per child and kind (SPEC §4.4): undoing a stop or a delete
+        // while another timer of that kind has started since would make two. (Timers running before
+        // the action, like the two of a "Keep earlier" being undone, may run again together.)
+        val running = db.events().running().map { it.toModel() }
+        val revived = change.events.map { it.after }.filter { it.status == EventStatus.RUNNING && it.deletedAt == null }
+        val startedSince = { r: Event -> running.any { it.id != r.id && it.childId == r.childId && it.kind == r.kind && it.createdAt > row.createdAt } }
+        if (revived.any(startedSince)) return@write false
         apply(change)
         db.undo().markUndone(undoId, cx.now)
         true
@@ -509,6 +366,24 @@ class Repository(
         val segs = if (e.kind == Kind.BREAST) db.events().liveSegments(listOf(e.id)).map { it.toModel() } else emptyList()
         forgetTimerState(eventId)
         commit(EventEdit.delete(e, segs, cx), ActionInfo(Verb.DELETE, e.kind, e.id, e.startAt, subtype = e.subtype, name = e.supplementName), Source.APP, cx)
+    }
+
+    /**
+     * "Keep this one" on possible duplicates (SPEC §5.6): deletes the others as one action, with one
+     * Undo that brings them all back.
+     */
+    suspend fun deleteAll(eventIds: Collection<String>): Done? = write { cx ->
+        var change = io.github.uirlisi.mostor.core.Change()
+        var first: Event? = null
+        for (id in eventIds) {
+            val e = db.events().event(id)?.toModel()?.takeIf { it.deletedAt == null } ?: continue
+            val segs = if (e.kind == Kind.BREAST) db.events().liveSegments(listOf(e.id)).map { it.toModel() } else emptyList()
+            forgetTimerState(id)
+            change = change.then(EventEdit.delete(e, segs, cx))
+            if (first == null) first = e
+        }
+        val e = first ?: return@write null
+        commit(change, ActionInfo(Verb.DELETE, e.kind, e.id, e.startAt, subtype = e.subtype, name = e.supplementName), Source.APP, cx)
     }
 
     // ---- Children (SPEC §6.6) ----
@@ -582,54 +457,63 @@ class Repository(
     // ---- Restore from a copy (DECISIONS 2026-11-13) ----
 
     /**
-     * Replaces this phone's records with a copy's: every synced row in [copy] is written as it is,
-     * and this phone's live rows that aren't in the copy are soft-deleted (no hard deletes of
-     * synced rows). This phone keeps its device id, settings and day start; its clock moves past the
-     * copy's newest stamp first, so its own later changes (these deletions included) sort after
-     * everything in the copy. The undo history is cleared, since it describes the replaced state.
-     * Not undoable. Returns how many records the phone shows afterwards.
+     * Replaces this phone's records with a copy's: this phone's live rows that aren't in the copy are
+     * soft-deleted (no hard deletes of synced rows), and every row of [copy] that differs from the one
+     * here is written as a new change from this phone (a fresh stamp, `updated_at` now). Rows that
+     * are the same stay as they are. This phone keeps its device id, settings and day start; its
+     * clock moves past the copy's newest stamp first.
+     *
+     * The fresh stamps matter once other phones share the household: a restored row keeping its old
+     * stamp would lose to the newer version another phone holds, and since this phone's clock is past
+     * that version, a sync would never send it here either; the phones would disagree for good
+     * (review 2026-11-19). As new changes, the copy's records reach every phone. The undo history is
+     * cleared, since it describes the replaced state. Not undoable. Returns how many records the
+     * phone shows afterwards.
      */
     suspend fun restoreFrom(copy: DataCopy.Rows): Int = write { cx ->
-        copy.newestHlc()?.let { runCatching { HlcStamp.parse(it) }.getOrNull() }?.let(cx::observe)
+        cx.observeNewest(copy.newestHlc())
         val sql = db.openHelper.writableDatabase
         for (table in DataCopy.SYNCED_TABLES) {
             val rows = copy.tables[table].orEmpty()
             val incoming = rows.mapTo(HashSet()) { it.getAsString("id") }
-            val local = sql.query("SELECT id FROM `$table` WHERE deleted_at IS NULL")
-                .use { c -> buildList { while (c.moveToNext()) add(c.getString(0)) } }
-            for (id in local) {
-                if (id in incoming) continue
+            val here = sql.query("SELECT * FROM `$table`").use { c ->
+                with(DataCopy) { buildMap { while (c.moveToNext()) c.toValues().let { put(it.getAsString("id"), it) } } }
+            }
+            for ((id, row) in here) {
+                if (id in incoming || row.getAsLong("deleted_at") != null) continue
+                // A person's change: an event loses any automatic mark (Event.autoBase) it had.
+                val clearMark = if (table == "event") ", auto_base = NULL" else ""
                 sql.execSQL(
-                    "UPDATE `$table` SET deleted_at = ?, updated_at = ?, hlc = ? WHERE id = ?",
+                    "UPDATE `$table` SET deleted_at = ?, updated_at = ?, hlc = ?$clearMark WHERE id = ?",
                     arrayOf<Any>(cx.now, cx.now, cx.nextHlc(), id),
                 )
             }
-            for (row in rows) {
-                val id = row.getAsString("id")
+            for (copied in rows) {
+                val id = copied.getAsString("id")
+                if (here[id] == copied) continue
+                // Untouched seeded meds keep their shared stamp (it means "the same on every phone"),
+                // but only where this phone has no other version: one edited or deleted since the copy
+                // has a newer stamp on the other phones, which would never take the copy's back.
+                val seed = copied.getAsString("hlc") == Presets.SEED_HLC && here[id] == null
+                val row = if (seed) copied else ContentValues(copied).apply {
+                    put("updated_at", cx.now)
+                    put("hlc", cx.nextHlc())
+                    if (table == "event") putNull("auto_base")
+                }
                 if (sql.update(table, SQLiteDatabase.CONFLICT_ABORT, row, "id = ?", arrayOf(id)) == 0) {
                     sql.insert(table, SQLiteDatabase.CONFLICT_ABORT, row)
                 }
             }
         }
         db.undo().clear()
-        syncedWrites++
+        core.syncedWrites++
         DataCopy.readRows(sql).summary().records
     }
 
     // ---- JSON backup and CSV export (SPEC §8, Phase 4) ----
 
     /** Every synced row, deleted ones included, read in one transaction so they agree. */
-    suspend fun backupRows(): Merge.Rows {
-        ensureInitialized()
-        return db.withTransaction {
-            Merge.Rows(
-                children = db.children().all().map { it.toModel() },
-                events = db.events().all().map { it.toModel() },
-                segments = db.events().allSegments().map { it.toModel() },
-                presets = db.presets().all().map { it.toModel() },
-            )
-        }
-    }
+    suspend fun backupRows(): Merge.Rows = core.backupRows()
 
     /** The CSV export (one row per record). [babyName] names a child without a name. */
     suspend fun csv(babyName: String): String {
@@ -657,22 +541,18 @@ class Repository(
      */
     suspend fun importBackup(backup: Merge.Rows): ImportOutcome = write { cx ->
         // Later local changes (the blank child's replacement among them) sort after the backup's.
-        backup.newestHlc()?.let { runCatching { HlcStamp.parse(it) }.getOrNull() }?.let(cx::observe)
+        cx.observeNewest(backup.newestHlc())
         val (plan, blanks, outcome) = planBackup(backup)
-        apply(plan.change)
+        applyMerged(plan.change, cx)
         for ((child, presets) in blanks) apply(Merge.replaceBlank(child, presets, cx))
         outcome
     }
 
-    private suspend fun planBackup(backup: Merge.Rows): Triple<Merge.Plan, List<Pair<Child, List<SupplementPreset>>>, ImportOutcome> {
+    private suspend fun planBackup(file: Merge.Rows): Triple<Merge.Plan, List<Pair<Child, List<SupplementPreset>>>, ImportOutcome> {
+        // As in a sync: rows stamped far ahead of this phone's clock wait (Merge.Rows.notAfter).
+        val backup = file.notAfter(wallClock() + HybridClock.MAX_AHEAD_MS)
         val ids = backup.ids()
-        val local = Merge.Rows(
-            children = ids.children.chunked(500).flatMap { db.children().byIds(it) }.map { it.toModel() },
-            events = ids.events.chunked(500).flatMap { db.events().eventsByIds(it) }.map { it.toModel() },
-            segments = ids.segments.chunked(500).flatMap { db.events().segmentsByIds(it) }.map { it.toModel() },
-            presets = ids.presets.chunked(500).flatMap { db.presets().byIds(it) }.map { it.toModel() },
-        )
-        val plan = Merge.plan(local, backup)
+        val plan = Merge.plan(core.localRows(ids), backup)
 
         // This phone's untouched child gives way, but only to a backup that brings a live child.
         val incomingChildren = ids.children.toSet()
@@ -701,133 +581,6 @@ class Repository(
         )
         return Triple(plan, blanks, outcome)
     }
-
-    // ---- Bluetooth sync (SPEC §9, Phase 5) ----
-
-    data class Household(val id: String, val key: ByteArray)
-
-    /** This phone's household, or null when it has none (or its key can't be opened here). */
-    suspend fun household(): Household? {
-        val id = db.settings().get(Keys.HOUSEHOLD_ID) ?: return null
-        val wrapped = db.settings().get(Keys.HOUSEHOLD_KEY) ?: return null
-        val key = vault?.unwrap(wrapped) ?: return null
-        return Household(id, key)
-    }
-
-    /** The household, made now if this phone has none (the first "Add a phone"). */
-    suspend fun ensureHousehold(): Household {
-        household()?.let { return it }
-        val v = vault ?: error("no key vault")
-        val h = Household(Ids.uuidV7(wallClock()), io.github.uirlisi.mostor.sync.SyncCrypto.randomBytes(32))
-        setSettingsQuietly(mapOf(Keys.HOUSEHOLD_ID to h.id, Keys.HOUSEHOLD_KEY to v.wrap(h.key)))
-        return h
-    }
-
-    /**
-     * After joining: the household, the phone that added this one, and that phone's children and meds
-     * to match against (sessions wait until [matchChildren]). A phone that was in another household
-     * leaves it: its old peers are forgotten.
-     */
-    suspend fun joinHousehold(id: String, key: ByteArray, peerId: String, peerName: String, theirs: Merge.Rows) {
-        val v = vault ?: error("no key vault")
-        val pending = BackupJson.encode(theirs, wallClock(), "pairing")
-        write(notify = false) {
-            if (db.settings().get(Keys.HOUSEHOLD_ID) != id) db.peers().deleteAll()
-            putSetting(Keys.HOUSEHOLD_ID, id)
-            putSetting(Keys.HOUSEHOLD_KEY, v.wrap(key))
-            putSetting(Keys.SYNC_PENDING_MATCH, pending)
-            db.peers().upsert(PeerEntity(peerId, peerName, wallClock(), null, null))
-        }
-    }
-
-    suspend fun addPeer(id: String, name: String) = write(notify = false) {
-        db.peers().upsert(PeerEntity(id, name, wallClock(), db.peers().get(id)?.lastSyncAt, null))
-    }
-
-    suspend fun forgetPeer(id: String) = write(notify = false) { db.peers().delete(id) }
-
-    suspend fun peers(): List<PeerEntity> = db.peers().all()
-
-    fun peersFlow(): Flow<List<PeerEntity>> =
-        db.invalidationTracker.createFlow("peer", "setting").conflate().map { db.peers().all() }
-
-    /** Records how a session with [id] went: [ok], or a short reason. */
-    suspend fun peerResult(id: String, ok: Boolean, reason: String? = null) = write(notify = false) {
-        val at = if (ok) wallClock() else db.peers().get(id)?.lastSyncAt
-        db.peers().setResult(id, at, if (ok) "ok" else reason ?: "failed")
-    }
-
-    /** The other phone's children and meds waiting to be matched, or null. */
-    suspend fun pendingMatch(): Merge.Rows? =
-        db.settings().get(Keys.SYNC_PENDING_MATCH)?.let { (BackupJson.decode(it) as? BackupJson.Read.Ok)?.backup?.rows }
-
-    /** This phone's device id and its clock's origin. */
-    suspend fun deviceId(): String = ensureInitialized().origin
-
-    /**
-     * Child matching (SPEC §9.4 step 4), as one local change, then sessions may run. [same] maps
-     * this phone's child ids to the other phone's (absent: a different child, kept as it is). An
-     * untouched child (a fresh install's "Baby") gives way without a question, as on import.
-     */
-    suspend fun matchChildren(same: Map<String, String>) = write(local = false) { cx ->
-        val theirs = pendingMatch() ?: return@write
-        // Their children and meds first (the rows the first sync would bring anyway), so this phone
-        // always has a child to record for, also when its own blank one gives way.
-        mergeIn(theirs, cx)
-        val theirChildren = theirs.children.filter { it.deletedAt == null }.associateBy { it.id }
-        var change = io.github.uirlisi.mostor.core.Change()
-        for (mine in db.children().live().map { it.toModel() }) {
-            if (mine.id in theirChildren) continue
-            val presets = db.presets().ofChild(mine.id).map { it.toModel() }
-            val target = same[mine.id]?.let { theirChildren[it] }
-            change = when {
-                target != null -> change.then(
-                    ChildMatch.same(
-                        mine, target,
-                        db.events().all().filter { it.childId == mine.id }.map { it.toModel() },
-                        presets, theirs.presets.filter { it.childId == target.id }, cx,
-                    ),
-                )
-                theirChildren.isNotEmpty() && Merge.isBlank(mine, db.events().countOf(mine.id), presets) ->
-                    change.then(Merge.replaceBlank(mine, presets, cx))
-                else -> change
-            }
-        }
-        apply(change)
-        db.settings().delete(Keys.SYNC_PENDING_MATCH)
-    }
-
-    // SyncStore: the sync session's view of the data.
-
-    override suspend fun vector(): Map<String, String> = Sync.vector(backupRows())
-
-    override suspend fun vectorFor(peerId: String): Map<String, String> =
-        if (db.peers().get(peerId)?.lastSyncAt == null) emptyMap() else vector()
-
-    override suspend fun rowsSince(vector: Map<String, String>): Merge.Rows = Sync.since(backupRows(), vector)
-
-    override suspend fun applyRows(rows: Merge.Rows): Int = write(local = false) { cx ->
-        val change = mergeIn(rows, cx)
-        change.events.size + change.segments.size + change.children.size + change.presets.size
-    }
-
-    /** Merges rows from another phone (SPEC §5.9) inside the caller's transaction. */
-    private suspend fun mergeIn(rows: Merge.Rows, cx: Cx): io.github.uirlisi.mostor.core.Change {
-        rows.newestHlc()?.let { runCatching { HlcStamp.parse(it) }.getOrNull() }?.let(cx::observe)
-        val ids = rows.ids()
-        val local = Merge.Rows(
-            children = ids.children.chunked(500).flatMap { db.children().byIds(it) }.map { it.toModel() },
-            events = ids.events.chunked(500).flatMap { db.events().eventsByIds(it) }.map { it.toModel() },
-            segments = ids.segments.chunked(500).flatMap { db.events().segmentsByIds(it) }.map { it.toModel() },
-            presets = ids.presets.chunked(500).flatMap { db.presets().byIds(it) }.map { it.toModel() },
-        )
-        val change = Merge.plan(local, rows).change
-        apply(change)
-        return change
-    }
-
-    override suspend fun knows(deviceId: String): Boolean =
-        db.settings().get(Keys.SYNC_PENDING_MATCH) == null && db.peers().get(deviceId) != null
 
     // ---- Supplement presets (SPEC §6.6) ----
 
@@ -867,6 +620,8 @@ class Repository(
 
     fun settingsFlow(): Flow<SettingsSnapshot> = changes().conflate().map { settings() }
 
+    suspend fun settings(): SettingsSnapshot = core.settings()
+
     /** Sets a per-phone setting, or removes it ([value] null) so its default applies. */
     suspend fun setSetting(key: String, value: String?) {
         write {
@@ -878,10 +633,13 @@ class Repository(
      * Writes settings without refreshing the notification (nor, through it, starting the daily
      * backup): for the backup's own bookkeeping. Screens still see the change.
      */
-    suspend fun setSettingsQuietly(values: Map<String, String?>) {
-        write(notify = false) {
-            for ((key, value) in values) if (value == null) db.settings().delete(key) else putSetting(key, value)
-        }
+    suspend fun setSettingsQuietly(values: Map<String, String?>) = core.setSettingsQuietly(values)
+
+    /** For the first-launch notification permission request (asked once, then a banner). */
+    suspend fun markNotificationPermissionAsked(): Boolean {
+        val asked = db.settings().get(Keys.NOTIFICATION_PERMISSION_ASKED) != null
+        if (!asked) write(notify = false) { putSetting(Keys.NOTIFICATION_PERMISSION_ASKED, "1") }
+        return !asked
     }
 
     // ---- Import of a Baby Tracker report ----
@@ -935,7 +693,6 @@ class Repository(
         }
     }
 
-    /** The "has no end" notification was swiped away: leave the end unknown and stop asking. */
     /**
      * The status notification was swiped away with "Keep the notification" off (true), or the app
      * was opened or the phone restarted (false). Quiet: the notifier decides what to post.
@@ -944,6 +701,7 @@ class Repository(
         setSettingsQuietly(mapOf(Keys.STATUS_DISMISSED to if (dismissed) "true" else null))
     }
 
+    /** The "has no end" notification was swiped away: leave the end unknown and stop asking. */
     suspend fun dismissNoEnd(eventId: String) {
         write { putSetting(Keys.NO_END_DISMISSED_PREFIX + eventId, "1") }
     }
@@ -969,304 +727,57 @@ class Repository(
         }
         if (due.isEmpty()) return
         write(notify = false) { cx ->
+            // Decided again inside the write: a Resume or "Still going" committed meanwhile wins.
+            val current = settings()
             for (d in due) {
                 val t = timedById(d.event.id) ?: continue
-                val pausedAt = t.pausedAt
-                if (pausedAt != null) {
-                    // A forgotten pause: the feed ends at its pause, shown with Undo like a button.
-                    commit(Timers.stop(t, pausedAt, cx), ActionInfo(Verb.STOP, Kind.BREAST, t.event.id, pausedAt), Source.NOTIFICATION, cx)
-                } else {
-                    apply(Timers.giveUp(t, cx))
-                }
+                if (Overrun.state(t, cx.now, current.limitsFor(t.event.kind), current.snoozes[t.event.id]) !in AUTOMATIC) continue
+                // Both are said in a notification of their own, on every phone ([HomeState.noEnd], [HomeState.autoEnded]).
+                apply(if (t.pausedAt != null) Timers.endForgottenPause(t, cx) else Timers.giveUp(t, cx))
                 forgetTimerState(t.event.id)
             }
         }
     }
 
-    // ---- Reads ----
+    // ---- Reads ([Views]) ----
 
-    /** Emits whenever a table the screens show changes. */
-    private fun changes(): Flow<Set<String>> =
-        db.invalidationTracker.createFlow("event", "breast_segment", "supplement_preset", "setting", "undo", "child", "peer")
+    /** [homeState] whenever a table it shows changes, built off the main thread. */
+    fun homeStates(): Flow<HomeState> = views.homeStates()
 
-    fun homeStates(): Flow<HomeState> = changes().conflate().map { homeState() }
+    /** The status notification's and the quick sheet's view, read in one transaction ([Views.homeState]). */
+    suspend fun homeState(): HomeState = views.homeState()
 
+    /** Today + [dayOffset] days: the summary and the timeline ([Views.dayView]). */
+    suspend fun dayView(dayOffset: Int, showHidden: Boolean = false): DayView = views.dayView(dayOffset, showHidden)
 
-    suspend fun homeState(): HomeState {
-        ensureInitialized()
-        val now = wallClock()
-        val s = settings()
-        val child = childId()
-        val days = DayClock(s.dayStartHour, zone())
-        val all = db.children().live().map { it.toModel() }
-        val active = all.filter { it.archivedAt == null }
+    fun dayViews(dayOffset: Int, showHidden: Boolean): Flow<DayView> = views.dayViews(dayOffset, showHidden)
 
-        val running = db.events().running().map { e ->
-            val t = timed(e)
-            RunningTimer(t, Overrun.state(t, now, s.limitsFor(t.event.kind), s.snoozes[e.id]))
-        }
-        val noEnd = db.events().endUnknownSince(now - NO_END_WINDOW_MS)
-            .filter { it.id !in s.noEndDismissed }
-            .map { timed(it) }
-        val today = days.dayOf(now)
-        // Hidden kinds and subtypes leave the summary (SPEC §6.6).
-        val todays = db.events().inRange(days.startOf(today), days.endOf(today)).map { it.toModel() }
-            .filter { s.visibility.shows(it) }
-        val mine = status(all.first { it.id == child }, todays, today, days, now)
-        val others = if (active.size > 1) active.filter { it.id != child }.map { status(it, todays, today, days, now) } else emptyList()
-        val recent = db.undo().latest()
-            ?.takeIf { it.undoneAt == null && it.source == Source.NOTIFICATION.code && now - it.createdAt < RECENT_MS }
-            ?.let { RecentAction(it.id, UndoCodec.decode(it.payload).info, it.createdAt) }
+    /** The log: the last [dayCount] days, grouped by day, filtered ([Views.logView]). */
+    suspend fun logView(dayCount: Int, filter: LogFilter): LogView = views.logView(dayCount, filter)
 
-        val presets = db.presets().live().map { it.toModel() }
-        val doses = dosesOf(child, days.endOf(today), days)
+    fun logViews(dayCount: Int, filter: LogFilter): Flow<LogView> = views.logViews(dayCount, filter)
 
-        val wakeTimes = running.mapNotNull {
-            Overrun.nextCheck(it.timed, now, s.limitsFor(it.timed.event.kind), s.snoozes[it.timed.event.id])
-        } + listOfNotNull(days.nextDayStart(now), recent?.let { it.createdAt + RECENT_MS })
-
-        return HomeState(
-            now = now,
-            childId = child,
-            children = active,
-            childrenById = all.associateBy { it.id },
-            others = others,
-            running = running,
-            noEnd = noEnd,
-            presets = presets,
-            meds = presets.filter { it.childId == child }.associate { p ->
-                p.id to Meds.status(p, doses[p.id].orEmpty(), today)
-            },
-            lastFeed = mine.lastFeed,
-            lastSide = mine.lastSide,
-            lastFeedMs = mine.lastFeedMs,
-            awakeSince = mine.awakeSince,
-            lastDiaper = db.events().latestOfKinds(child, listOf(Kind.DIAPER.code))?.toModel(),
-            lastPump = db.events().latestOfKinds(child, listOf(Kind.PUMP.code))?.toModel(),
-            supplementsToday = todays.filter { it.kind == Kind.SUPPLEMENT && it.childId == child && it.supplementPresetId != null }
-                .groupBy { it.supplementPresetId!! }
-                .mapValues { (_, es) -> es.maxOf { it.startAt } },
-            today = mine.today,
-            recent = recent,
-            settings = s,
-            nextWakeAt = wakeTimes.minOrNull(),
-            lastSync = db.peers().all().filter { it.lastSyncAt != null }.maxByOrNull { it.lastSyncAt!! }
-                ?.let { LastSync(it.name, it.lastSyncAt!!) },
-            conflicts = io.github.uirlisi.mostor.core.Conflicts.find(running.map { it.timed }, s.conflictsKept),
-        )
-    }
-
-    /** One child's last feed, last side, awake since and today's counts ([todays]: the day's visible records). */
-    private suspend fun status(child: Child, todays: List<Event>, today: LocalDate, days: DayClock, now: Long): ChildStatus {
-        val lastFeed = db.events().latestOfKinds(child.id, FEED_KINDS)?.toModel()
-        val lastBreast = db.events().latestOfKinds(child.id, listOf(Kind.BREAST.code))?.let { timed(it) }
-        val sleeps = db.events().recentOfKind(child.id, Kind.SLEEP.code, 5).map { it.toModel() }
-        return ChildStatus(
-            child = child,
-            lastFeed = lastFeed,
-            lastSide = Feeds.lastSide(lastBreast),
-            lastFeedMs = lastBreast?.takeIf { it.event.id == lastFeed?.id && it.event.status == EventStatus.ENDED }
-                ?.let { Durations.of(it, now) },
-            awakeSince = Durations.awakeSince(sleeps),
-            today = DaySummary.counts(todays.filter { it.childId == child.id }, today, days),
-        )
-    }
-
-    /**
-     * Today + [dayOffset] days (negative = earlier): the summary and the timeline, newest first,
-     * for the children chosen on Today (by default the active child). Hidden kinds are left out
-     * unless [showHidden].
-     */
-    suspend fun dayView(dayOffset: Int, showHidden: Boolean = false): DayView {
-        ensureInitialized()
-        val now = wallClock()
-        val s = settings()
-        val days = DayClock(s.dayStartHour, zone())
-        val today = days.dayOf(now)
-        val day = today.plusDays(dayOffset.toLong())
-        val active = db.children().live().map { it.toModel() }.filter { it.archivedAt == null }
-        val child = childId()
-        val chosen = ChildChoice.parseToday(s.todayChild, active.map { it.id }, child)
-        // Every child: archived children's records stay in, as they always have.
-        val all = active.size > 1 && chosen.size == active.size
-
-        // From the day before, so a sleep across midnight counts in this day's totals.
-        val events = db.events().inRange(days.startOf(day.minusDays(1)), days.endOf(day)).map { it.toModel() }
-        val segments = segmentsOf(events)
-        val scoped = events.filter { all || it.childId in chosen }
-        val visible = scoped.filter { s.visibility.shows(it) }
-        val inDay = (if (showHidden) scoped else visible).filter { days.dayOf(it.startAt) == day }
-        val dups = Duplicates.find(events.filter { days.dayOf(it.startAt) == day })
-        val items = inDay.map { e -> DayItem(e, if (e.kind.timed) TimedEvent.of(e, segments) else null, dups[e.id].orEmpty()) }
-        val presets = db.presets().live().map { it.toModel() }
-        val totals = active.filter { it.id in chosen }.map { c ->
-            // The child's meds shown on this phone, in their order (SPEC §5.10).
-            val meds = presets.filter { it.childId == c.id && s.visibility.showsPreset(it.id) }
-                .takeIf { s.visibility.shows(Kind.SUPPLEMENT) }.orEmpty()
-            ChildTotals(
-                if (active.size > 1) c else null,
-                DaySummary.totals(visible.filter { it.childId == c.id }, segments, day, days, now),
-                Meds.day(meds, dosesOf(c.id, days.endOf(day), days), day, day == today),
-            )
-        }
-        val hidden = scoped.count { days.dayOf(it.startAt) == day && !s.visibility.shows(it) }
-        return DayView(day, day == today, days.endOf(day), items, DaySummary.counts(visible, day, days), totals, hidden, chosen)
-    }
-
-    fun dayViews(dayOffset: Int, showHidden: Boolean): Flow<DayView> = changes().conflate().map { dayView(dayOffset, showHidden) }
-
-    /**
-     * The log (SPEC §6.5): the last [dayCount] days, newest first, grouped by day, filtered.
-     * Records hidden on this phone are left out unless [LogFilter.showHidden].
-     */
-    suspend fun logView(dayCount: Int, filter: LogFilter): LogView {
-        ensureInitialized()
-        val now = wallClock()
-        val s = settings()
-        val days = DayClock(s.dayStartHour, zone())
-        val today = days.dayOf(now)
-        val from = days.startOf(today.minusDays(dayCount - 1L))
-        val events = db.events().inRange(from, days.endOf(today)).map { it.toModel() }
-        val segments = segmentsOf(events)
-        val dups = Duplicates.find(events)
-        val matching = events.filter { e ->
-            (filter.childIds.isEmpty() || e.childId in filter.childIds) &&
-                (filter.kind == null || e.kind == filter.kind) &&
-                (filter.subtype == null || e.subtype == filter.subtype)
-        }
-        val shown = if (filter.showHidden) matching else matching.filter { s.visibility.shows(it) }
-        val grouped = shown.groupBy { days.dayOf(it.startAt) }.toSortedMap(reverseOrder()).map { (day, es) ->
-            LogDay(day, es.map { e -> DayItem(e, if (e.kind.timed) TimedEvent.of(e, segments) else null, dups[e.id].orEmpty()) })
-        }
-        val earliest = db.events().earliestStart()
-        return LogView(grouped, earliest != null && earliest < from, matching.size - shown.size)
-    }
-
-    fun logViews(dayCount: Int, filter: LogFilter): Flow<LogView> = changes().conflate().map { logView(dayCount, filter) }
-
-    /**
-     * What Patterns and Stats draw (SPEC §5.8, §6.5) for the chart child: the last [range] days up
-     * to today, or every day from the child's first record. [focus] narrows the records; records
-     * hidden on this phone are left out unless [showHidden]. The pattern rows and the gaps between
-     * feeds are computed only when asked for.
-     */
-    suspend fun chartView(
-        range: ChartRange,
-        focus: ChartFocus,
-        showHidden: Boolean,
-        withPatterns: Boolean,
-        withGaps: Boolean,
-    ): ChartView {
-        ensureInitialized()
-        val now = wallClock()
-        val s = settings()
-        val clock = DayClock(s.dayStartHour, zone())
-        val today = clock.dayOf(now)
-        val children = db.children().live().map { it.toModel() }
-        val childId = s.chartChild?.takeIf { id -> children.any { it.id == id } } ?: childId()
-        val first = db.events().earliestStartOf(childId)
-        val from = range.days?.let { today.minusDays(it - 1L) } ?: first?.let { minOf(clock.dayOf(it), today) } ?: today
-
-        // From the day before, so a sleep across midnight and the first gap between feeds count.
-        val mine = db.events().inRange(clock.startOf(from.minusDays(1)), clock.endOf(today)).map { it.toModel() }
-            .filter { it.childId == childId }
-        val segments = segmentsOf(mine)
-        val selected = ChartFocus.select(mine, focus, s.visibility, showHidden)
-        val inRange = { e: Event -> clock.dayOf(e.startAt) >= from }
-        val hidden = if (showHidden) 0 else ChartFocus.select(mine, focus, s.visibility, true).count { inRange(it) && !s.visibility.shows(it) }
-
-        return ChartView(
-            now = now,
-            clock = clock,
-            today = today,
-            from = from,
-            to = today,
-            childId = childId,
-            children = children,
-            firstDay = first?.let(clock::dayOf),
-            points = Series.days(selected, segments, from, today, clock, now, first, focus),
-            patterns = if (withPatterns) Patterns.grid(selected, segments, from, today, clock, now, focus) else emptyList(),
-            gaps = if (withGaps) Series.feedGaps(selected, from, today, clock) else emptyList(),
-            hiddenCount = hidden,
-            // The chart child's meds only (each child has their own).
-            presets = db.presets().live().map { it.toModel() }.filter { it.childId == childId },
-            settings = s,
-        )
-    }
+    /** What Patterns and Stats draw ([Views.chartView]). */
+    suspend fun chartView(range: ChartRange, focus: ChartFocus, showHidden: Boolean, withPatterns: Boolean, withGaps: Boolean): ChartView =
+        views.chartView(range, focus, showHidden, withPatterns, withGaps)
 
     /** [chartView] whenever the data or a setting changes, computed off the main thread. */
     fun chartViews(range: ChartRange, focus: ChartFocus, showHidden: Boolean, withPatterns: Boolean, withGaps: Boolean): Flow<ChartView> =
-        changes().conflate().map { chartView(range, focus, showHidden, withPatterns, withGaps) }.flowOn(Dispatchers.Default)
-
-    private suspend fun segmentsOf(events: List<Event>): List<BreastSegment> {
-        val ids = events.filter { it.kind == Kind.BREAST }.map { it.id }
-        return ids.chunked(500).flatMap { db.events().liveSegments(it) }.map { it.toModel() }
-    }
-
-    /** A child's med doses before [before], by preset id, on the app's days. */
-    private suspend fun dosesOf(childId: String, before: Long, days: DayClock): Map<String, List<Dose>> =
-        db.events().doses(childId, before).filter { it.supplementPresetId != null }
-            .groupBy({ it.supplementPresetId!! }) { Dose(it.startAt, days.dayOf(it.startAt), it.status == EventStatus.SKIPPED.code) }
-
-    /** The app's date for [now] (its day start, SPEC §5.1), as yyyy-MM-dd: when a med schedule starts. */
-    private suspend fun today(now: Long): String = DayClock(settings().dayStartHour, zone()).dayOf(now).toString()
-
-    suspend fun settings(): SettingsSnapshot =
-        SettingsSnapshot.from(db.settings().all().associate { it.key to it.value }, locale())
-
-    /** For the first-launch notification permission request (asked once, then a banner). */
-    suspend fun markNotificationPermissionAsked(): Boolean {
-        val asked = db.settings().get(Keys.NOTIFICATION_PERMISSION_ASKED) != null
-        if (!asked) write(notify = false) { putSetting(Keys.NOTIFICATION_PERMISSION_ASKED, "1") }
-        return !asked
-    }
+        views.chartViews(range, focus, showHidden, withPatterns, withGaps)
 
     // ---- Internals ----
 
-    /**
-     * [local]: a change made on this phone, which other phones should get soon (SPEC §9.6). Rows
-     * received from another phone are not local, so a sync never sets off another one back.
-     */
-    private suspend fun <T> write(notify: Boolean = true, local: Boolean = true, block: suspend (Cx) -> T): T {
-        val c = ensureInitialized()
-        var changedSynced = false
-        val result = writeLock.withLock {
-            val before = syncedWrites
-            db.withTransaction {
-                val cx = Cx(wallClock(), zone().id, c)
-                val r = block(cx)
-                c.last?.let { db.meta().setHlc(it.encode()) }
-                r
-            }.also { changedSynced = syncedWrites != before }
-        }
-        if (notify) sink.refresh()
-        if (local && changedSynced) onLocalChange?.invoke()
-        return result
-    }
+    private suspend fun <T> write(notify: Boolean = true, local: Boolean = true, block: suspend (Cx) -> T): T = core.write(notify, local, block)
+    private suspend fun apply(change: Change) = core.apply(change)
+    private suspend fun applyMerged(change: Change, cx: Cx) = core.applyMerged(change, cx)
+    private suspend fun commit(made: Change, info: ActionInfo, source: Source, cx: Cx): Done? = core.commit(made, info, source, cx)
+    private suspend fun putSetting(key: String, value: String) = core.putSetting(key, value)
+    private fun changes() = core.changes()
+    private suspend fun childId() = core.childId()
+    private suspend fun timed(e: EventEntity) = core.timed(e)
 
-    /** Called after this phone changed synced rows itself (Phase 5: sync on change). */
-    @Volatile
-    var onLocalChange: (() -> Unit)? = null
-
-    /** Counts writes of synced rows, under the write lock. */
-    private var syncedWrites = 0L
-
-    private suspend fun apply(change: Change) {
-        if (!change.isEmpty) syncedWrites++
-        if (change.events.isNotEmpty()) db.events().upsertEvents(change.events.map { it.after.toEntity() })
-        if (change.segments.isNotEmpty()) db.events().upsertSegments(change.segments.map { it.after.toEntity() })
-        if (change.children.isNotEmpty()) db.children().upsert(change.children.map { it.after.toEntity() })
-        if (change.presets.isNotEmpty()) db.presets().upsert(change.presets.map { it.after.toEntity() })
-    }
-
-    private suspend fun commit(change: Change, info: ActionInfo, source: Source, cx: Cx): Done? {
-        if (change.isEmpty) return null
-        apply(change)
-        val id = Ids.uuidV7(cx.now)
-        db.undo().insert(UndoEntity(id, cx.now, source.code, UndoCodec.encode(UndoPayload(info, change)), null))
-        db.undo().pruneBefore(cx.now - UNDO_KEEP_MS)
-        return Done(id, info)
-    }
+    /** The app's date for [now] (its day start, SPEC §5.1), as yyyy-MM-dd: when a med schedule starts. */
+    private suspend fun today(now: Long): String = DayClock(settings().dayStartHour, zone()).dayOf(now).toString()
 
     private suspend fun unchangedSince(change: Change): Boolean =
         change.events.all { db.events().event(it.after.id)?.hlc == it.after.hlc } &&
@@ -1274,23 +785,9 @@ class Repository(
             change.children.all { db.children().child(it.after.id)?.hlc == it.after.hlc } &&
             change.presets.all { db.presets().preset(it.after.id)?.hlc == it.after.hlc }
 
-    private suspend fun putSetting(key: String, value: String) = db.settings().put(SettingEntity(key, value))
-
     private suspend fun forgetTimerState(eventId: String) {
         db.settings().delete(Keys.SNOOZE_PREFIX + eventId)
         db.settings().delete(Keys.NO_END_DISMISSED_PREFIX + eventId)
-    }
-
-    private suspend fun childId(): String {
-        db.settings().get(Keys.ACTIVE_CHILD)?.let { id ->
-            db.children().child(id)?.takeIf { it.deletedAt == null && it.archivedAt == null }?.let { return it.id }
-        }
-        return db.children().firstActive()?.id ?: error("no active child")
-    }
-
-    private suspend fun timed(e: EventEntity): TimedEvent {
-        val segments = if (e.kind == Kind.BREAST.code) db.events().liveSegments(listOf(e.id)).map { it.toModel() } else emptyList()
-        return TimedEvent.of(e.toModel(), segments)
     }
 
     private suspend fun timedById(id: String): TimedEvent? =
@@ -1302,14 +799,10 @@ class Repository(
     private fun Change.newEventId(): String = events.first { it.before == null }.after.id
 
     companion object {
-        private val FEED_KINDS = listOf(Kind.BREAST.code, Kind.BOTTLE.code)
-
         /** Overrun states the repository acts on by itself. */
         private val AUTOMATIC = setOf(OverrunState.GIVE_UP, OverrunState.END_AT_PAUSE)
 
         /** How long the notification shows "Recorded … [Undo]" after a notification action. */
-        const val RECENT_MS = 60_000L
-        private const val UNDO_KEEP_MS = 24 * 3_600_000L
-        private const val NO_END_WINDOW_MS = 24 * 3_600_000L
+        const val RECENT_MS = 10_000L
     }
 }

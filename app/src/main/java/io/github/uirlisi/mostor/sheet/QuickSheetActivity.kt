@@ -6,7 +6,11 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.lifecycleScope
 import io.github.uirlisi.mostor.MainActivity
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import io.github.uirlisi.mostor.container
 import io.github.uirlisi.mostor.ui.MoStorTheme
 
@@ -24,6 +28,11 @@ open class QuickSheetActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val c = container
+        // Another household became active (SPEC §9.4): this sheet records for the old one, so it closes.
+        val household = c.households.list().activeId
+        lifecycleScope.launch {
+            c.households.flow.map { it.activeId }.distinctUntilChanged().collect { if (it != household) finish() }
+        }
         val focus = intent.getStringExtra(EXTRA_FOCUS_EVENT)
         // A launcher shortcut records once, when the sheet opens (not again after a rotation).
         val shortcut = if (savedInstanceState == null) intent.action?.takeIf { it in SHORTCUTS } else null

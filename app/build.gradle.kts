@@ -29,8 +29,8 @@ val localProps = Properties().apply {
 val signingKeys = listOf("mostor.keystore.path", "mostor.keystore.password", "mostor.key.alias", "mostor.key.password")
 val missingSigningKeys = signingKeys.filter { localProps.getProperty(it).isNullOrBlank() }
 
-// F-Droid builds prod from source without the key (-Pmostor.unsigned=true), then either signs it
-// or, when the build is reproducible, attaches the signature from the release APK on GitHub.
+// Builds prod without the release key (-Pmostor.unsigned=true): for anyone building from source,
+// and to check that the build is reproducible (it equals the signed release minus the signature).
 val unsignedProd = providers.gradleProperty("mostor.unsigned").orNull == "true"
 
 android {
@@ -41,8 +41,8 @@ android {
         applicationId = "io.github.uirlisi.mostor"
         minSdk = 31
         targetSdk = 37
-        versionCode = 20
-        versionName = "0.6.2"
+        versionCode = 21
+        versionName = "0.7.0"
     }
 
     signingConfigs {
@@ -87,7 +87,7 @@ android {
         compose = true
     }
 
-    // Reproducible, F-Droid-ready APKs: no dependency list encrypted for Google in the signing block,
+    // Reproducible APKs: no dependency list encrypted for Google in the signing block,
     // and no git commit id (private commits differ from the public ones the same files come from).
     dependenciesInfo {
         includeInApk = false

@@ -1,3 +1,0 @@
-First public release.
-- The source is published under the GNU GPL, version 3 or later; the About page says so.
-- Release builds are reproducible.

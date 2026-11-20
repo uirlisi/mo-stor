@@ -59,6 +59,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.github.uirlisi.mostor.R
 import io.github.uirlisi.mostor.core.Durations
+import io.github.uirlisi.mostor.core.EventStatus
 import io.github.uirlisi.mostor.core.Kind
 import io.github.uirlisi.mostor.core.OverrunState
 import io.github.uirlisi.mostor.core.PickedTime
@@ -93,31 +94,34 @@ internal class TimerHost(
 
 /**
  * The "has no end" cards (the focused one first) and a card per running timer, with all their
- * controls. The quick sheet and the Today screen both show them.
+ * controls. The quick sheet shows them.
  */
 @Composable
 internal fun TimerCards(
     st: HomeState,
-    now: Long,
+    /** The live clock, read by the running cards alone. */
+    now: () -> Long,
     fmt: Formats,
     repository: Repository,
     host: TimerHost,
     focusEventId: String? = null,
 ) {
-    val zone = ZoneId.systemDefault()
     for (k in st.conflicts) {
         ConflictCard(
-            k, fmt, st.childOf(k.childId)?.let { fmt.childName(it.name) to childColor(it, st.colorIndex(it.id)) },
+            k, fmt, cardChild(st, k.childId, fmt),
             onKeep = { keep -> host.act { repository.resolveConflict(k.key, keep, Source.SHEET) } },
         )
     }
-    for (t in st.noEnd.sortedByDescending { it.event.id == focusEventId }) {
+    // Ends marked unknown, and feeds the app ended at their forgotten pause (SPEC §5.5), whose end
+    // can still be moved; the one whose notification was tapped first.
+    for (t in (st.noEnd + st.autoEnded).sortedByDescending { it.event.id == focusEventId }) {
+        val ended = t.event.status == EventStatus.ENDED
         NoEndCard(
-            t, fmt, st.childOf(t.event.childId)?.let { fmt.childName(it.name) to childColor(it, st.colorIndex(it.id)) },
+            t, fmt, cardChild(st, t.event.childId, fmt),
             onSetEnd = {
-                host.pickTime(R.string.sheet_pick_end, t.event.startAt) { lt ->
-                    val at = minOf(PickedTime.earliestAtOrAfter(lt, t.event.startAt, zone), System.currentTimeMillis())
-                    host.act { repository.stop(t.event.id, Source.SHEET, at = at) }
+                host.pickTime(R.string.sheet_pick_end, t.event.endAt ?: t.event.startAt) { lt ->
+                    val at = minOf(PickedTime.earliestAtOrAfter(lt, t.event.startAt, ZoneId.systemDefault()), System.currentTimeMillis())
+                    host.act { if (ended) repository.moveEnd(t.event.id, at, Source.SHEET) else repository.stop(t.event.id, Source.SHEET, at = at) }
                 }
             },
             onLeave = { host.quietly { repository.dismissNoEnd(t.event.id) } },
@@ -126,11 +130,11 @@ internal fun TimerCards(
     for (r in st.running) {
         val id = r.timed.event.id
         RunningCard(
-            r, now, fmt, st.childOf(r.timed.event.childId)?.let { fmt.childName(it.name) to childColor(it, st.colorIndex(it.id)) },
+            r, now, fmt, cardChild(st, r.timed.event.childId, fmt),
             onStop = { m -> host.act { repository.stop(id, Source.SHEET, minutesAgo = m) } },
             onPickStop = {
                 host.pickTime(R.string.sheet_pick_end, System.currentTimeMillis()) { lt ->
-                    val at = PickedTime.latestAtOrBefore(lt, System.currentTimeMillis(), zone)
+                    val at = PickedTime.latestAtOrBefore(lt, System.currentTimeMillis(), ZoneId.systemDefault())
                     host.act { repository.stop(id, Source.SHEET, at = at) }
                 }
             },
@@ -143,12 +147,17 @@ internal fun TimerCards(
     }
 }
 
+/** A card's child: their name and color, only with several children. */
+private fun cardChild(st: HomeState, childId: String, fmt: Formats): Pair<String, Color>? =
+    st.childOf(childId)?.let { fmt.childName(it.name) to childColor(it, st.colorIndex(it.id)) }
+
 /**
  * The record button (docs/PHASE3B_HANDOFF.md): neutral fill with a 1 dp border, radius 16, a 24 dp
  * icon above the word (64 dp tall) or before it (56 dp, a wide button). [primary] is the action
  * button: the action color, no border; there is only ever one per state. [selected] outlines the
  * button in [accent] (a record's color; the action color by default) over an 8% tint of it;
- * [outlined] gives the outline without the tint. [badge] sits in the top-right corner ("NEXT").
+ * [outlined] gives the outline without the tint. [badge] sits in a top corner ("NEXT"): the right one,
+ * or the left one with [badgeStart] (Left mirrors Right, so the badge stays clear of the icon).
  * [container] replaces the neutral fill (the running card's controls).
  */
 @Composable
@@ -165,6 +174,7 @@ internal fun BigButton(
     iconAbove: Boolean = true,
     accent: Color? = null,
     badge: String? = null,
+    badgeStart: Boolean = false,
     container: Color? = null,
     /** Replaces the neutral 1 dp border (the running card's controls). */
     edge: Color? = null,
@@ -218,13 +228,13 @@ internal fun BigButton(
         }
         if (badge != null) {
             // Its own box: the outer one hands its minimum size on, which would stretch the badge.
-            Box(Modifier.matchParentSize(), contentAlignment = Alignment.TopEnd) {
+            Box(Modifier.matchParentSize(), contentAlignment = if (badgeStart) Alignment.TopStart else Alignment.TopEnd) {
                 Text(
                     caps(badge),
                     style = MoStor.type.badge,
                     color = if (mark.luminance() > 0.4f) Color(0xFF16171A) else Color.White,
                     modifier = Modifier
-                        .padding(top = 6.dp, end = 6.dp)
+                        .padding(top = 6.dp, start = 6.dp, end = 6.dp)
                         .clearAndSetSemantics {}
                         .background(mark, RoundedCornerShape(6.dp))
                         .padding(horizontal = 5.dp, vertical = 1.dp),
@@ -262,7 +272,7 @@ internal fun ChipButton(label: String, modifier: Modifier = Modifier, border: Co
 @Composable
 private fun RunningCard(
     r: RunningTimer,
-    now: Long,
+    now: () -> Long,
     fmt: Formats,
     /** The child's name and color, only with several children. */
     child: Pair<String, Color>?,
@@ -285,7 +295,7 @@ private fun RunningCard(
     val tint = if (breast) MoStor.colors.feedTimer else MoStor.colors.sleepTimer
     TimerCard(tint) {
         // Header: the record's disc, what's running and since when, and the clock.
-        val sides = if (breast) Durations.breast(t.segments, now) else null
+        val sides = if (breast) Durations.breast(t.segments, now()) else null
         CardHeader(
             icon = if (breast) KindIcons.of(side) else KindIcons.of(Kind.SLEEP),
             tint = colors.icon(if (breast) colors.left else colors.sleep),
@@ -308,7 +318,7 @@ private fun RunningCard(
         ) {
             // A feed counts its feeding time only, so the clock stands still while paused.
             Text(
-                fmt.elapsed(sides?.totalMs ?: (now - e.startAt)),
+                fmt.elapsed(sides?.totalMs ?: (now() - e.startAt)),
                 style = MoStor.type.clock,
                 color = if (paused) scheme.onSurfaceVariant else scheme.onSurface,
                 maxLines = 1,
@@ -420,14 +430,20 @@ private fun NoEndCard(t: TimedEvent, fmt: Formats, child: Pair<String, Color>?, 
         CardHeader(
             icon = if (kind == Kind.BREAST) KindIcons.of(t.lastSide ?: Side.LEFT) else KindIcons.of(kind),
             tint = colors.icon(if (kind == Kind.BREAST) colors.left else colors.sleep),
-            title = stringResource(R.string.notif_no_end_title, fmt.timedKind(kind), fmt.time(t.event.startAt)),
+            title = stringResource(if (t.event.autoBase != null) R.string.notif_auto_title else R.string.notif_no_end_title, fmt.timedKind(kind), fmt.time(t.event.startAt)),
             subtitle = emptyList(),
+            note = when {
+                t.event.autoBase == null -> null
+                t.event.status == EventStatus.END_UNKNOWN -> stringResource(R.string.sheet_auto_no_end)
+                else -> stringResource(R.string.sheet_auto_paused, fmt.time(t.event.endAt ?: t.event.startAt))
+            },
             child = child,
             mark = R.drawable.ic_overdue,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             BigButton(stringResource(R.string.sheet_set_end), Modifier.weight(1f), primary = true, onClick = onSetEnd)
-            TextButton(onClick = onLeave) { Text(stringResource(R.string.sheet_leave_unknown), style = MoStor.type.button) }
+            val leave = if (t.event.status == EventStatus.ENDED) R.string.ok else R.string.sheet_leave_unknown
+            TextButton(onClick = onLeave) { Text(stringResource(leave), style = MoStor.type.button) }
         }
     }
 }
@@ -476,6 +492,7 @@ private fun CardHeader(
     disc: Color = tint.copy(alpha = 0.12f),
     live: LiveMark? = null,
     mark: Int? = null,
+    note: String? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -504,6 +521,8 @@ private fun CardHeader(
                     }
                 }
             }
+            // A sentence under the title (a timer stopped automatically): wraps, unlike the pieces above.
+            note?.let { Text(it, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp), color = scheme.onSurfaceVariant) }
         }
         trailing?.invoke()
     }

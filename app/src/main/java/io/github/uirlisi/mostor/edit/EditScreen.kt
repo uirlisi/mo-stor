@@ -38,17 +38,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -60,7 +57,6 @@ import io.github.uirlisi.mostor.core.BottleContent
 import io.github.uirlisi.mostor.core.Child
 import io.github.uirlisi.mostor.core.Diaper
 import io.github.uirlisi.mostor.core.EditProblem
-import io.github.uirlisi.mostor.core.Event
 import io.github.uirlisi.mostor.core.EventDraft
 import io.github.uirlisi.mostor.core.EventEdit
 import io.github.uirlisi.mostor.core.Kind
@@ -71,9 +67,7 @@ import io.github.uirlisi.mostor.core.SupplementPreset
 import io.github.uirlisi.mostor.core.TimeField
 import io.github.uirlisi.mostor.core.Volume
 import io.github.uirlisi.mostor.core.VolumeUnit
-import io.github.uirlisi.mostor.data.Editing
 import io.github.uirlisi.mostor.data.HomeState
-import io.github.uirlisi.mostor.data.SaveResult
 import io.github.uirlisi.mostor.sheet.BigButton
 import io.github.uirlisi.mostor.sheet.ChipButton
 import io.github.uirlisi.mostor.sheet.TimePickDialog
@@ -86,9 +80,6 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZoneOffset
-import kotlinx.coroutines.async
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 private const val MIN = 60_000L
 
@@ -103,67 +94,17 @@ fun EditScreen(ui: AppUi, eventId: String?, newKind: Kind?) {
     val repo = ui.repository
     val fmt = ui.fmt
     val zone = remember { ZoneId.systemDefault() }
-    val scope = rememberCoroutineScope()
+    val state = rememberEditState(ui, eventId, newKind)
 
-    var home by remember { mutableStateOf<HomeState?>(null) }
-    var original by remember { mutableStateOf<Editing?>(null) }
-    var initial by remember { mutableStateOf<EventDraft?>(null) }
-    var draft by remember { mutableStateOf<EventDraft?>(null) }
-    var gone by remember { mutableStateOf(false) }
-    var reloads by remember { mutableIntStateOf(0) }
-    var field by remember { mutableStateOf<TimeField?>(null) }
-    var picking by remember { mutableStateOf(false) }
-    var pickingDate by remember { mutableStateOf(false) }
-    var discardAsk by remember { mutableStateOf(false) }
-    var overlaps by remember { mutableStateOf<List<Event>>(emptyList()) }
-    var saving by remember { mutableStateOf(false) }
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(15_000)
-            now = System.currentTimeMillis()
-        }
-    }
-    LaunchedEffect(reloads) {
-        val st = repo.homeState()
-        home = st
-        ui.unit = st.settings.unit
-        val d = if (eventId != null) {
-            val e = repo.loadForEdit(eventId)
-            if (e == null) {
-                gone = true
-                return@LaunchedEffect
-            }
-            original = e
-            EventEdit.draftOf(e.event, e.segments)
-        } else {
-            val t = System.currentTimeMillis()
-            now = t
-            newDraft(newKind ?: Kind.NOTE, st, t)
-        }
-        initial = d
-        draft = d
-        field = null
-    }
-    LaunchedEffect(draft) {
-        val d = draft ?: return@LaunchedEffect
-        delay(300)
-        overlaps = repo.overlapsFor(d)
-    }
-
-    val d = draft
-    val st = home
-    val dirty = d != null && (eventId == null || d != initial)
-    BackHandler(enabled = dirty) { discardAsk = true }
-    fun leave() {
-        if (dirty) discardAsk = true else ui.back()
-    }
+    val d = state.draft
+    val st = state.home
+    val dirty = state.dirty
+    BackHandler(enabled = dirty) { state.discardAsk = true }
 
     Column(Modifier.fillMaxSize().imePadding()) {
         // Title bar
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(end = 16.dp)) {
-            IconButton(onClick = ::leave, modifier = Modifier.size(56.dp)) {
+            IconButton(onClick = state::leave, modifier = Modifier.size(56.dp)) {
                 Icon(painterResource(R.drawable.ic_back), contentDescription = stringResource(R.string.edit_back))
             }
             val kind = d?.kind ?: newKind
@@ -172,47 +113,47 @@ fun EditScreen(ui: AppUi, eventId: String?, newKind: Kind?) {
                 style = MaterialTheme.typography.titleLarge,
             )
         }
-        if (gone) {
+        if (state.gone) {
             Text(stringResource(R.string.edit_gone), modifier = Modifier.padding(16.dp))
             return@Column
         }
         if (d == null || st == null) return@Column
         // The clock ticks every 15 s; a time set "now" must never read as later than now.
-        val problems = EventEdit.problems(d, maxOf(now, System.currentTimeMillis()))
+        val problems = EventEdit.problems(d, maxOf(state.now, System.currentTimeMillis()))
 
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(summary(d, fmt, now), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(summary(d, fmt, state.now), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (d.running) Text(stringResource(R.string.edit_running), style = MaterialTheme.typography.bodyMedium)
 
             // Child: only when there are several (and never moves a running timer).
             if (st.severalChildren && !d.running) {
                 Label(R.string.edit_child)
-                ChildField(st, d.childId, fmt) { draft = d.copy(childId = it) }
+                ChildField(st, d.childId, fmt) { state.draft = d.copy(childId = it) }
             }
 
             // Date: moves the whole record, keeping its clock times.
             if (!d.running) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Label(R.string.edit_date, Modifier.width(96.dp))
-                    ChipButton(fmt.date(d.start), Modifier.widthIn(min = 160.dp)) { pickingDate = true }
+                    ChipButton(fmt.date(d.start), Modifier.widthIn(min = 160.dp)) { state.pickingDate = true }
                 }
             }
 
             when (d.kind) {
-                Kind.BREAST -> SegmentsEditor(d, fmt, now, problems, field, onField = { field = it }, onChange = { draft = it })
+                Kind.BREAST -> SegmentsEditor(d, fmt, state.now, problems, state.field, onField = { state.field = it }, onChange = { state.draft = it })
                 Kind.SLEEP -> {
-                    TimeRow(R.string.edit_start, d.startAt, d, fmt, field == TimeField.Start) { field = TimeField.Start }
+                    TimeRow(R.string.edit_start, d.startAt, d, fmt, state.field == TimeField.Start) { state.field = TimeField.Start }
                     if (!d.running && !d.endUnknown) {
                         val end = d.endAt
-                        if (end != null) TimeRow(R.string.edit_end, end, d, fmt, field == TimeField.End) { field = TimeField.End }
+                        if (end != null) TimeRow(R.string.edit_end, end, d, fmt, state.field == TimeField.End) { state.field = TimeField.End }
                     }
                 }
                 else -> {
-                    TimeRow(R.string.edit_time, d.startAt, d, fmt, field == TimeField.Start) { field = TimeField.Start }
-                    PointFields(d, st, fmt, field, onField = { field = it }, onChange = { draft = it })
+                    TimeRow(R.string.edit_time, d.startAt, d, fmt, state.field == TimeField.Start) { state.field = TimeField.Start }
+                    PointFields(d, st, fmt, state.field, onField = { state.field = it }, onChange = { state.draft = it })
                 }
             }
 
@@ -227,13 +168,13 @@ fun EditScreen(ui: AppUi, eventId: String?, newKind: Kind?) {
                         checked = d.endUnknown,
                         onCheckedChange = { unknown ->
                             if (unknown) {
-                                draft = EventEdit.setEndUnknown(d, true)
-                                field = null
+                                state.draft = EventEdit.setEndUnknown(d, true)
+                                state.field = null
                             } else {
                                 // Back to a known end: start from the original end (or the last start) and let the owner set it.
-                                val base = initial?.end ?: d.segments.lastOrNull()?.startAt ?: d.startAt
-                                draft = EventEdit.setEndUnknown(d, false, minOf(base, now))
-                                field = TimeField.End
+                                val base = state.initial?.end ?: d.segments.lastOrNull()?.startAt ?: d.startAt
+                                state.draft = EventEdit.setEndUnknown(d, false, minOf(base, state.now))
+                                state.field = TimeField.End
                             }
                         },
                     )
@@ -243,7 +184,7 @@ fun EditScreen(ui: AppUi, eventId: String?, newKind: Kind?) {
             // Note (the main text for a note record).
             OutlinedTextField(
                 value = d.note.orEmpty(),
-                onValueChange = { draft = d.copy(note = it) },
+                onValueChange = { state.draft = d.copy(note = it) },
                 label = { Text(stringResource(R.string.edit_note)) },
                 minLines = if (d.kind == Kind.NOTE) 3 else 1,
                 modifier = Modifier.fillMaxWidth(),
@@ -251,7 +192,7 @@ fun EditScreen(ui: AppUi, eventId: String?, newKind: Kind?) {
 
             // What still stops a Save, and overlaps (allowed, only highlighted).
             for (p in problems.filter { it.segment == null }) ProblemText(p)
-            for (o in overlaps.take(2)) {
+            for (o in state.overlaps.take(2)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Icon(painterResource(R.drawable.ic_warning), contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
                     Text(
@@ -265,15 +206,15 @@ fun EditScreen(ui: AppUi, eventId: String?, newKind: Kind?) {
 
         // Thumb zone: the nudge panel for the selected time, else Delete and Save.
         HorizontalDivider()
-        val f = field
+        val f = state.field
         val value = f?.let { EventEdit.value(d, it) }
         if (f != null && value != null) {
             NudgePanel(
                 title = fieldTitle(f),
                 value = timeLabel(value, d, fmt),
-                onNudge = { minutes -> draft = EventEdit.nudge(d, f, minutes * MIN, System.currentTimeMillis()) },
-                onPick = { picking = true },
-                onDone = { field = null },
+                onNudge = { minutes -> state.draft = EventEdit.nudge(d, f, minutes * MIN, System.currentTimeMillis()) },
+                onPick = { state.picking = true },
+                onDone = { state.field = null },
             )
         } else {
             Row(
@@ -289,28 +230,8 @@ fun EditScreen(ui: AppUi, eventId: String?, newKind: Kind?) {
                 }
                 Spacer(Modifier.weight(1f))
                 Button(
-                    onClick = {
-                        if (saving) return@Button
-                        saving = true
-                        scope.launch {
-                            val r = ui.appScope.async { repo.saveEdit(original, d) }.await()
-                            saving = false
-                            when (r) {
-                                is SaveResult.Saved -> {
-                                    ui.back()
-                                    ui.confirm(r.done)
-                                }
-                                SaveResult.Unchanged -> ui.back()
-                                SaveResult.Stale -> {
-                                    ui.message(ui.fmt.string(R.string.edit_stale))
-                                    reloads++
-                                }
-                                SaveResult.Refused -> ui.message(ui.fmt.string(R.string.edit_refused))
-                                is SaveResult.Invalid -> Unit // shown inline already
-                            }
-                        }
-                    },
-                    enabled = dirty && problems.isEmpty() && !saving,
+                    onClick = { state.save(d) },
+                    enabled = dirty && problems.isEmpty() && !state.saving,
                     modifier = Modifier.heightIn(min = 56.dp).widthIn(min = 140.dp),
                 ) {
                     Text(stringResource(R.string.edit_save), style = MaterialTheme.typography.titleMedium)
@@ -319,65 +240,47 @@ fun EditScreen(ui: AppUi, eventId: String?, newKind: Kind?) {
         }
     }
 
-    if (picking) {
-        val f = field
-        val value = f?.let { draft?.let { dd -> EventEdit.value(dd, it) } }
+    if (state.picking) {
+        val f = state.field
+        val value = f?.let { state.draft?.let { dd -> EventEdit.value(dd, it) } }
         if (f == null || value == null) {
-            picking = false
+            state.picking = false
         } else {
             TimePickDialog(
                 title = stringResource(fieldTitle(f)),
                 initial = value,
-                onDismiss = { picking = false },
+                onDismiss = { state.picking = false },
                 onPicked = { lt ->
-                    picking = false
-                    draft = draft?.let { EventEdit.set(it, f, PickedTime.nearest(lt, value, zone)) }
+                    state.picking = false
+                    state.draft = state.draft?.let { EventEdit.set(it, f, PickedTime.nearest(lt, value, zone)) }
                 },
             )
         }
     }
-    if (pickingDate) {
-        draft?.let { dd ->
-            DatePick(dd.start, zone, onDismiss = { pickingDate = false }) { date ->
-                pickingDate = false
-                draft = EventEdit.moveToDate(dd, date, zone)
+    if (state.pickingDate) {
+        state.draft?.let { dd ->
+            DatePick(dd.start, zone, onDismiss = { state.pickingDate = false }) { date ->
+                state.pickingDate = false
+                state.draft = EventEdit.moveToDate(dd, date, zone)
             }
         }
     }
-    if (discardAsk) {
+    if (state.discardAsk) {
         AlertDialog(
-            onDismissRequest = { discardAsk = false },
+            onDismissRequest = { state.discardAsk = false },
             title = { Text(stringResource(R.string.edit_discard_title)) },
             confirmButton = {
                 TextButton(onClick = {
-                    discardAsk = false
+                    state.discardAsk = false
                     ui.back()
                 }) { Text(stringResource(R.string.edit_discard)) }
             },
-            dismissButton = { TextButton(onClick = { discardAsk = false }) { Text(stringResource(R.string.edit_keep_editing)) } },
+            dismissButton = { TextButton(onClick = { state.discardAsk = false }) { Text(stringResource(R.string.edit_keep_editing)) } },
         )
     }
 }
 
-/** A new record's starting point: what the quick sheet would record now (SPEC §6.3 defaults). */
-private fun newDraft(kind: Kind, st: HomeState, now: Long): EventDraft {
-    val base = EventEdit.blank(kind, st.childId, now, st.lastSide?.other ?: Side.LEFT)
-    val unit = st.settings.unit
-    val v = st.settings.visibility
-    return when (kind) {
-        Kind.BOTTLE -> base.copy(
-            subtype = (v.bottleContents.firstOrNull { it == st.settings.lastBottleContent } ?: v.bottleContents.firstOrNull()
-                ?: BottleContent.BREAST_MILK).code,
-            amountMl = st.settings.bottleStartMl ?: Volume.toMl(unit.firstAmount, unit),
-        )
-        Kind.PUMP -> base.copy(amountMl = st.settings.pumpStartMl ?: Volume.toMl(unit.firstAmount, unit))
-        Kind.DIAPER -> base.copy(subtype = (v.diapers.firstOrNull() ?: Diaper.WET).code)
-        Kind.SUPPLEMENT -> st.presets.firstOrNull { it.childId == base.childId && v.showsPreset(it.id) }?.let { withPreset(base, it) } ?: base
-        else -> base
-    }
-}
-
-private fun withPreset(d: EventDraft, p: SupplementPreset) =
+internal fun withPreset(d: EventDraft, p: SupplementPreset) =
     d.copy(supplementPresetId = p.id, supplementName = p.name, supplementAmount = p.amount, supplementUnit = p.unit)
 
 /** "Wed, 11 Nov · 14:02 · 25m (L 15m · R 10m)". */
@@ -413,10 +316,10 @@ private fun Label(res: Int, modifier: Modifier = Modifier) {
 /** The record's child: the single-choice picker (Phase 3c). */
 @Composable
 private fun ChildField(st: HomeState, selected: String, fmt: Formats, onSelect: (String) -> Unit) {
-    val context = LocalContext.current
+    val res = LocalResources.current
     ChildPicker(
         childOptions(st.children, fmt, st::colorIndex), selected,
-        contentDescription = { context.getString(R.string.picker_child_cd, it) },
+        contentDescription = { res.getString(R.string.picker_child_cd, it) },
         onSelect = onSelect,
     )
 }
@@ -606,7 +509,7 @@ private fun PointFields(
                 modifier = Modifier.fillMaxWidth(),
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                NumberField(d.supplementAmount, R.string.edit_supplement_amount, Modifier.weight(1f)) { onChange(d.copy(supplementAmount = it)) }
+                NumberField(d.supplementAmount, R.string.edit_supplement_amount, Modifier.weight(1f), resetKey = d.supplementPresetId) { onChange(d.copy(supplementAmount = it)) }
                 OutlinedTextField(
                     value = d.supplementUnit.orEmpty(),
                     onValueChange = { onChange(d.copy(supplementUnit = it.ifEmpty { null })) },
@@ -622,8 +525,10 @@ private fun PointFields(
 
 /** A decimal field that keeps what is typed while it's being typed. */
 @Composable
-internal fun NumberField(value: Double?, label: Int, modifier: Modifier = Modifier, onChange: (Double?) -> Unit) {
-    var text by remember { mutableStateOf(value?.let { DecimalFormat("0.##").format(it) }.orEmpty()) }
+internal fun NumberField(value: Double?, label: Int, modifier: Modifier = Modifier, resetKey: Any? = null, onChange: (Double?) -> Unit) {
+    // What is typed stays as typed ("1.", or more digits than the value keeps); [resetKey] changing
+    // (another med preset) shows the value it brings.
+    var text by rememberSaveable(resetKey) { mutableStateOf(value?.let { DecimalFormat("0.##").format(it) }.orEmpty()) }
     OutlinedTextField(
         value = text,
         onValueChange = { t ->

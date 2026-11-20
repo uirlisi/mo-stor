@@ -1,7 +1,6 @@
 package io.github.uirlisi.mostor.settings
 
 import android.net.Uri
-import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -18,11 +17,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -30,6 +26,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import io.github.uirlisi.mostor.ui.rememberOperationState
 import io.github.uirlisi.mostor.R
 import io.github.uirlisi.mostor.core.BabyTracker
 import io.github.uirlisi.mostor.core.Kind
@@ -43,13 +40,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private sealed interface ImportState {
-    data object Idle : ImportState
-    data object Reading : ImportState
-    data class Message(val text: Int) : ImportState
-    data class Preview(val report: BabyTracker.Report, val plan: BabyTracker.Plan, val bringBack: Boolean = false) : ImportState
-    data class Imported(val done: Done) : ImportState
+/** An import's own steps: what it would add, to confirm; then what it added, with Undo. */
+private sealed interface ImportStep {
+    data class Preview(val report: BabyTracker.Report, val plan: BabyTracker.Plan, val bringBack: Boolean = false) : ImportStep
+    data class Imported(val done: Done) : ImportStep
 }
+
+private val TITLE = R.string.import_title
 
 /**
  * "Import from Baby Tracker…": pick the PDF report (no storage permission: the system file
@@ -58,82 +55,66 @@ private sealed interface ImportState {
  */
 @Composable
 fun rememberBabyTrackerImport(repository: Repository, appScope: CoroutineScope): () -> Unit {
-    val context = LocalContext.current
+    // The application context: the work outlives the screen in the app scope, and must not hold the activity.
+    val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
-    var state by remember { mutableStateOf<ImportState>(ImportState.Idle) }
+    val state = rememberOperationState<Operation<ImportStep>>("baby-tracker-import", Operation.Idle)
 
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
         if (!PdfText.supported) {
-            state = ImportState.Message(R.string.import_unsupported)
+            state.value = Operation.Message(TITLE, R.string.import_unsupported)
             return@rememberLauncherForActivityResult
         }
-        state = ImportState.Reading
-        scope.launch {
-            state = try {
-                val report = withContext(Dispatchers.IO) { BabyTracker.parse(PdfText.read(context, uri)) }
-                if (report.records.isEmpty()) {
-                    ImportState.Message(R.string.import_failed)
-                } else {
-                    ImportState.Preview(report, repository.previewImport(report))
-                }
-            } catch (e: Exception) {
-                Log.w("MoStor", "PDF import failed: ${e.javaClass.simpleName}")
-                ImportState.Message(R.string.import_failed)
+        // In the app scope, like the import itself: a recreated screen mustn't cancel the read.
+        state.runThenShowOrFail(appScope, TITLE, R.string.import_reading, R.string.import_failed, "PDF import") {
+            val report = withContext(Dispatchers.IO) { BabyTracker.parse(PdfText.read(context, uri)) }
+            if (report.records.isEmpty()) {
+                Operation.Message(TITLE, R.string.import_failed)
+            } else {
+                Operation.Step(ImportStep.Preview(report, repository.previewImport(report)))
             }
         }
     }
 
-    when (val s = state) {
-        ImportState.Idle -> Unit
-        ImportState.Reading -> AlertDialog(
-            onDismissRequest = {},
-            confirmButton = {},
-            title = { Text(stringResource(R.string.import_title)) },
-            text = { Text(stringResource(R.string.import_reading)) },
-        )
-        is ImportState.Message -> AlertDialog(
-            onDismissRequest = { state = ImportState.Idle },
-            confirmButton = { TextButton(onClick = { state = ImportState.Idle }) { Text(stringResource(R.string.ok)) } },
-            title = { Text(stringResource(R.string.import_title)) },
-            text = { Text(stringResource(s.text)) },
-        )
-        is ImportState.Preview -> AlertDialog(
-            onDismissRequest = { state = ImportState.Idle },
-            confirmButton = {
-                if (s.plan.newEvents > 0) {
+    OperationDialog(state) { s ->
+        when (s) {
+            is ImportStep.Preview -> AlertDialog(
+                onDismissRequest = { state.value = Operation.Idle },
+                confirmButton = {
+                    if (s.plan.newEvents > 0) {
+                        TextButton(onClick = {
+                            state.runThenShow(appScope, TITLE, R.string.import_reading) {
+                                val done = repository.importBabyTracker(s.report, s.bringBack)
+                                if (done != null) Operation.Step(ImportStep.Imported(done)) else Operation.Message(TITLE, R.string.import_nothing)
+                            }
+                        }) { Text(stringResource(R.string.import_action)) }
+                    }
+                },
+                dismissButton = { TextButton(onClick = { state.value = Operation.Idle }) { Text(stringResource(R.string.cancel)) } },
+                title = { Text(stringResource(TITLE)) },
+                text = {
+                    PreviewText(s.report, s.plan, s.bringBack) { on ->
+                        scope.launch { state.value = Operation.Step(s.copy(plan = repository.previewImport(s.report, on), bringBack = on)) }
+                    }
+                },
+            )
+            is ImportStep.Imported -> AlertDialog(
+                onDismissRequest = { state.value = Operation.Idle },
+                confirmButton = { TextButton(onClick = { state.value = Operation.Idle }) { Text(stringResource(R.string.ok)) } },
+                dismissButton = {
                     TextButton(onClick = {
-                        state = ImportState.Reading
-                        appScope.launch {
-                            val done = repository.importBabyTracker(s.report, s.bringBack)
-                            state = if (done != null) ImportState.Imported(done) else ImportState.Message(R.string.import_nothing)
-                        }
-                    }) { Text(stringResource(R.string.import_action)) }
-                }
-            },
-            dismissButton = { TextButton(onClick = { state = ImportState.Idle }) { Text(stringResource(R.string.cancel)) } },
-            title = { Text(stringResource(R.string.import_title)) },
-            text = {
-                PreviewText(s.report, s.plan, s.bringBack) { on ->
-                    scope.launch { state = s.copy(plan = repository.previewImport(s.report, on), bringBack = on) }
-                }
-            },
-        )
-        is ImportState.Imported -> AlertDialog(
-            onDismissRequest = { state = ImportState.Idle },
-            confirmButton = { TextButton(onClick = { state = ImportState.Idle }) { Text(stringResource(R.string.ok)) } },
-            dismissButton = {
-                TextButton(onClick = {
-                    appScope.launch { repository.undo(s.done.undoId) }
-                    state = ImportState.Idle
-                }) { Text(stringResource(R.string.action_undo)) }
-            },
-            title = { Text(stringResource(R.string.import_title)) },
-            text = {
-                val n = s.done.info.count ?: 0
-                Text(pluralStringResource(R.plurals.label_imported, n, n))
-            },
-        )
+                        appScope.launch { repository.undo(s.done.undoId) }
+                        state.value = Operation.Idle
+                    }) { Text(stringResource(R.string.action_undo)) }
+                },
+                title = { Text(stringResource(TITLE)) },
+                text = {
+                    val n = s.done.info.count ?: 0
+                    Text(pluralStringResource(R.plurals.label_imported, n, n))
+                },
+            )
+        }
     }
     return remember(pick) { { pick.launch(arrayOf("application/pdf")) } }
 }
@@ -185,9 +166,8 @@ private fun PreviewText(report: BabyTracker.Report, plan: BabyTracker.Plan, brin
                     is BabyTracker.CountMismatch -> stringResource(
                         R.string.import_issue_count,
                         day,
-                        issue.expected,
-                        stringResource(if (issue.kind == Kind.DIAPER) R.string.import_what_diapers else R.string.import_what_feeds),
-                        issue.found,
+                        pluralStringResource(if (issue.kind == Kind.DIAPER) R.plurals.import_diapers else R.plurals.import_feeds, issue.expected, issue.expected),
+                        pluralStringResource(R.plurals.import_read, issue.found, issue.found),
                     )
                     is BabyTracker.SidesUnknown -> stringResource(R.string.import_issue_sides, day)
                 },

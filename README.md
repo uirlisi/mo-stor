@@ -1,4 +1,4 @@
-<img src="fastlane/metadata/android/en-US/images/icon.png" align="right" width="128" height="128" alt="Mo Stór icon">
+<img src="images/icon.png" align="right" width="128" height="128" alt="Mo Stór icon">
 
 <h1>Mo Stór
 </h1>
@@ -19,10 +19,10 @@ No screen unlock is required.
 No account and no setup: open it once, allow notifications, and start recording.  
 
 <p>
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="24%" alt="The notification during a feed, with Switch side, Pause and Stop">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="24%" alt="The quick sheet: a tap for each kind of record">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.png" width="24%" alt="The quick sheet during a feed, with fixes for a forgotten stop">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/6.png" width="24%" alt="Patterns: one row per day across 24 hours">
+  <img src="images/screenshots/1.png" width="24%" alt="The notification during a feed, with Switch side, Pause and Stop">
+  <img src="images/screenshots/2.png" width="24%" alt="The quick sheet: a tap for each kind of record">
+  <img src="images/screenshots/3.png" width="24%" alt="The quick sheet during a feed, with fixes for a forgotten stop">
+  <img src="images/screenshots/6.png" width="24%" alt="Patterns: one row per day across 24 hours">
 </p>
 
 ## Features
@@ -43,9 +43,9 @@ The day as a timeline, every record with filters and editing, one row per day ac
 - **Support for multiple children**  
 Each child comes with their own metadata and meds schedule.
 - **Sync between caregivers' phones over Bluetooth**   
-Directly between the phones, encrypted with a key only they share.
+Directly between the phones, encrypted with a key only they share. Invite a phone into the household, remove one, or leave; one phone can also hold several households.
 - **Backups, Export, and Import**    
-A full database copy, JSON and CSV export, JSON import, and an optional daily export to a folder you choose. A PDF daily report of the Baby Tracker app can be imported.
+A full database copy, JSON and CSV export, JSON import, and an optional daily export to a folder you choose. A PDF daily report of the Baby Tracker app can be imported (Android 15 or later).
 
 ## Privacy
 
@@ -57,11 +57,13 @@ A full database copy, JSON and CSV export, JSON import, and an optional daily ex
   - starting after a reboot (to bring the notification back)
   - Bluetooth: scan, connect, and advertise for sync.  
     The scan permission is explicitly declared as `neverForLocation`.
+  - the app's own `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`, which Android adds so that only the
+    app can send to its own broadcast receivers.
 
 To check a downloaded APK yourself:
 
 ```
-apkanalyzer manifest permissions app-prod-release.apk
+apkanalyzer manifest permissions mo-stor-0.7.0.apk
 ```
 
 ## Install
@@ -75,9 +77,13 @@ with this certificate (SHA-256):
 8c:cd:3e:af:d0:69:c7:94:53:1e:37:3d:3f:33:2f:ff:8a:77:c1:2d:6f:01:0e:18:e5:6b:a7:f6:c4:86:6b:32
 ```
 
-To check it: `apksigner verify --print-certs app-prod-release.apk`.
+To check it: `apksigner verify --print-certs mo-stor-0.7.0.apk`.
 
 Uninstalling Mo Stór deletes its data. Export a backup first (Settings › Backup and import).
+
+Phones that sync must run versions that speak the same sync format: update every phone of a
+household together (the release notes say when a version doesn't sync with the one before).
+Installing a new version over the old one keeps the data.
 
 ## Build
 

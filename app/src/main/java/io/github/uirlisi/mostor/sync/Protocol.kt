@@ -1,12 +1,23 @@
 package io.github.uirlisi.mostor.sync
 
 import android.util.Base64
+import io.github.uirlisi.mostor.core.HlcStamp
+import io.github.uirlisi.mostor.core.Member
 import io.github.uirlisi.mostor.core.Merge
+import io.github.uirlisi.mostor.core.Roster
+import io.github.uirlisi.mostor.core.Standing
 import io.github.uirlisi.mostor.data.BackupJson
+import org.json.JSONArray
 import org.json.JSONObject
 
-/** This phone as the other phone sees it: its device id and its name ("Galaxy S23"). */
-data class Me(val deviceId: String, val name: String)
+/**
+ * This phone as the other phone sees it: its device id and its name ("Galaxy S23"). [otherIds] are
+ * the device ids of this phone's other households' databases (SPEC §9.4): another phone presenting
+ * any of them, or [deviceId], is refused.
+ */
+data class Me(val deviceId: String, val name: String, val otherIds: Set<String> = emptySet()) {
+    fun isMine(id: String): Boolean = id == deviceId || id in otherIds
+}
 
 /** What a sync session needs from the database. The repository implements it. */
 interface SyncStore {
@@ -26,9 +37,32 @@ interface SyncStore {
     /** Merges rows from the other phone in one transaction; returns how many rows changed here. */
     suspend fun applyRows(rows: Merge.Rows): Int
 
-    /** Whether [deviceId] is a phone this one syncs with (not forgotten). */
-    suspend fun knows(deviceId: String): Boolean
+    /** The household's phones as this phone has them, removed ones included (SPEC §9.4). */
+    suspend fun members(): List<Member>
+
+    /** Merges the other phone's list of the household's phones; returns how many rows changed here. */
+    suspend fun applyMembers(theirs: List<Member>): Int
+
+    /** Whether [deviceId] is a phone of the household here, was removed from it, or isn't known. */
+    suspend fun standing(deviceId: String): Standing
+
+    /** This phone has just told [deviceId] that it was removed from the household. */
+    suspend fun told(deviceId: String)
 }
+
+/**
+ * The other phone refused this one: [removed] when it was removed from the household, by [by];
+ * [already] when, joining, it found it already holds this household.
+ */
+class RefusedByPeer(val removed: Boolean, val peerId: String?, val peerName: String?, val by: String?, val already: Boolean = false) :
+    ProtocolException(if (removed) "refused: removed" else if (already) "refused: already in the household" else "refused: not known there")
+
+/** Joining: one of this phone's databases already is in household [householdId], so it didn't join again. */
+class AlreadyIn(val householdId: String) : ProtocolException("already in the household")
+
+/** This phone refused [peerId]: removed from the household ([removed]) or not known here. */
+class RefusedPeer(val peerId: String, val removed: Boolean) :
+    ProtocolException(if (removed) "refused a removed phone" else "refused a phone not known here")
 
 /**
  * The sync session (SPEC §9.3), in a strict turn order so neither phone writes while the other is
@@ -40,21 +74,25 @@ interface SyncStore {
  * hello {n_c}                       →
  *                                   ←      hello {n_s}
  *   (keys: HKDF(household key, n_c‖n_s), one per direction; everything below is encrypted)
- * auth {device, name}               →
- *                                   ←      auth {device, name, vector}
+ * auth {device, name, members}      →
+ *   (the server merges the client's list of phones; a phone removed or not known: refuse)
+ *                                   ←      auth {device, name, vector, members}
+ *   (the client merges the server's list; a phone removed or not known: refuse)
  * vector, rows for the server       →
  *   (the server merges the client's rows)
  *                                   ←      rows for the client
  *   (the client merges the server's rows)
  * done                              →
  * ```
- * Each phone sends its vector only once it knows the other phone, because the first session with a
- * phone asks for everything ([SyncStore.vectorFor]). Rows travel as the JSON backup's format
- * (strictly read), gzipped. A phone that isn't a known peer is refused after its auth; a phone
- * without the household key fails at the first message.
+ * The household's list of phones (SPEC §9.4) goes whole both ways before either phone decides
+ * whether to let the other in, so a phone added by a third phone is known as soon as it shows up,
+ * and a removal reaches the removed phone, which is told with `refuse {why: removed}`. Each phone
+ * sends its vector only once it knows the other phone, because the first session with a phone asks
+ * for everything ([SyncStore.vectorFor]). Rows travel as the JSON backup's format (strictly read),
+ * gzipped. A phone without the household key fails at the first encrypted message.
  */
 object SyncSession {
-    const val VERSION = 2
+    const val VERSION = 4
 
     data class Result(val peerId: String, val peerName: String, val received: Int, val sent: Int)
 
@@ -66,10 +104,11 @@ object SyncSession {
         val ns = unb64(hello.getString("n"))
         val secure = SecureLink(link, key(householdKey, nc, ns, "c2s"), key(householdKey, nc, ns, "s2c"))
 
-        secure.sendJson(json("auth", "device" to me.deviceId, "name" to me.name))
+        secure.sendJson(json("auth", "device" to me.deviceId, "name" to me.name, "members" to membersJson(store.members())))
         val theirAuth = secure.receiveJson("auth")
         val peerId = theirAuth.getString("device")
-        if (!store.knows(peerId)) throw ProtocolException("not a known phone")
+        store.applyMembers(membersOf(theirAuth))
+        admit(secure, link, peerId, me, store)
         val mine = store.rowsSince(vectorOf(theirAuth))
         secure.sendJson(json("vector", "vector" to JSONObject(store.vectorFor(peerId) as Map<*, *>)))
         secure.sendRows(mine)
@@ -90,11 +129,14 @@ object SyncSession {
 
         val theirAuth = secure.receiveJson("auth")
         val peerId = theirAuth.getString("device")
-        if (!store.knows(peerId)) {
-            secure.sendJson(json("refuse", "why" to "not paired"))
-            throw ProtocolException("not a known phone")
-        }
-        secure.sendJson(json("auth", "device" to me.deviceId, "name" to me.name, "vector" to JSONObject(store.vectorFor(peerId) as Map<*, *>)))
+        store.applyMembers(membersOf(theirAuth))
+        admit(secure, link, peerId, me, store)
+        secure.sendJson(
+            json(
+                "auth", "device" to me.deviceId, "name" to me.name,
+                "vector" to JSONObject(store.vectorFor(peerId) as Map<*, *>), "members" to membersJson(store.members()),
+            ),
+        )
         val theirVector = vectorOf(secure.receiveJson("vector"))
         val theirRows = secure.receiveRows()
         val changed = store.applyRows(theirRows)
@@ -102,6 +144,33 @@ object SyncSession {
         secure.sendRows(mine)
         secure.receiveJson("done")
         return Result(peerId, theirAuth.getString("name"), changed, mine.size())
+    }
+
+    /**
+     * Lets [peerId] in if it is a phone of the household here, or one leaving it (its last session:
+     * its leaving and its last records reach the household); else tells it why not (with who
+     * removed it), waits for it to close, and throws [RefusedPeer]. A phone claiming one of this
+     * phone's own device ids is never let in: in a household where every other phone was removed,
+     * a modified removed phone could otherwise pass as this one (SPEC §9.4).
+     */
+    private suspend fun admit(secure: SecureLink, link: Link, peerId: String, me: Me, store: SyncStore) {
+        val standing = if (me.isMine(peerId)) Standing.UNKNOWN else store.standing(peerId)
+        if (standing == Standing.ACTIVE || standing == Standing.LEFT) return
+        val removed = standing == Standing.REMOVED
+        val members = store.members()
+        val by = members.firstOrNull { it.deviceId == peerId }?.removedBy?.let { id -> members.firstOrNull { it.deviceId == id }?.name }
+        secure.sendJson(
+            json("refuse", "why" to if (removed) "removed" else "unknown", "device" to me.deviceId, "name" to me.name, "by" to (by ?: me.name)),
+        )
+        if (removed) store.told(peerId)
+        link.awaitPeerClose()
+        // Two phones that removed each other before they synced: the merged list says this phone
+        // was removed too. Both meant it, so both go, each keeping its records (SPEC §9.4).
+        if (removed && store.standing(me.deviceId) == Standing.REMOVED) {
+            val mine = members.firstOrNull { it.deviceId == me.deviceId }?.removedBy
+            throw RefusedByPeer(removed = true, peerId = peerId, peerName = null, by = members.firstOrNull { it.deviceId == mine }?.name)
+        }
+        throw RefusedPeer(peerId, removed)
     }
 
     private fun key(hk: ByteArray, nc: ByteArray, ns: ByteArray, dir: String) = SyncCrypto.hkdf(hk, nc + ns, "mostor sync $dir")
@@ -117,11 +186,11 @@ object SyncSession {
 }
 
 /**
- * Pairing (SPEC §9.4): the phone that adds ("Add a phone") and the one that joins ("Join") agree a
+ * Pairing (SPEC §9.4): the phone that adds ("Invite a phone") and the one that joins ("Join a household") agree a
  * key with P-256 ECDH, and both show a 6-digit code made from the exchange. The adder commits to
  * its key first, so a phone in the middle can't pick keys to make the two codes match. When the
  * owner confirms on both, the adder sends the household key, its id and name, and its children and
- * their meds (for child matching on the joining phone).
+ * their meds (for child matching on the joining phone), and the household's list of phones.
  *
  * ```
  * joiner                                   adder
@@ -131,22 +200,41 @@ object SyncSession {
  *                                   ←      key {pub_a, n_a}
  *   (both: code from ECDH and the transcript; the owner compares; encrypted from here)
  * confirm {ok}                      ↔      confirm {ok}
- *                                   ←      household {id, key, device, name}, rows (children, meds)
- * joined {device, name}             →
+ * me {device, name}                 →
+ *                                   ←      household {id, key, device, name, members, household_name}, rows (children, meds)
+ * joined (or refuse {already})      →
  * ```
  */
 object Pairing {
-    data class Offer(val householdId: String, val householdKey: ByteArray, val rows: Merge.Rows)
+    /** [householdName]: the inviting phone's own name for the household, if it gave one; copied once by the joiner. */
+    data class Offer(
+        val householdId: String,
+        val householdKey: ByteArray,
+        val rows: Merge.Rows,
+        val members: List<Member> = emptyList(),
+        val householdName: String? = null,
+    )
 
     data class Joined(val peerId: String, val peerName: String)
 
-    data class Household(val id: String, val key: ByteArray, val peerId: String, val peerName: String, val rows: Merge.Rows)
+    data class Household(
+        val id: String,
+        val key: ByteArray,
+        val peerId: String,
+        val peerName: String,
+        val rows: Merge.Rows,
+        val members: List<Member> = emptyList(),
+        val householdName: String? = null,
+    )
 
     /** Thrown when either owner says the codes don't match. */
     class Declined : Exception("the codes weren't confirmed")
 
-    /** The adding phone. [confirm] shows the code and returns the owner's answer. */
-    suspend fun adder(link: Link, me: Me, offer: suspend () -> Offer, confirm: suspend (code: String) -> Boolean): Joined {
+    /**
+     * The adding phone. [confirm] shows the code and returns the owner's answer; [offer] gets the
+     * joining phone's id and name.
+     */
+    suspend fun adder(link: Link, me: Me, offer: suspend (Joined) -> Offer, confirm: suspend (code: String) -> Boolean): Joined {
         parse(link.receive(), "pair").let { if (it.optInt("v", -1) != SyncSession.VERSION) throw ProtocolException("protocol version") }
         val kp = SyncCrypto.keyPair()
         val pubA = SyncCrypto.encode(kp.public)
@@ -162,15 +250,30 @@ object Pairing {
         val secure = SecureLink(link, SyncCrypto.hkdf(shared, transcript, "mostor pair a2b"), SyncCrypto.hkdf(shared, transcript, "mostor pair b2a"))
         exchangeConfirmations(secure, confirm(SyncCrypto.pairingCode(shared, transcript)))
 
-        val o = offer()
-        secure.sendJson(json("household", "id" to o.householdId, "key" to b64(o.householdKey), "device" to me.deviceId, "name" to me.name))
+        val who = secure.receiveJson("me").let { Joined(it.getString("device"), it.getString("name")) }
+        if (me.isMine(who.peerId)) throw ProtocolException("the other phone claims this phone's id")
+        val o = offer(who)
+        secure.sendJson(
+            json(
+                "household", "id" to o.householdId, "key" to b64(o.householdKey), "device" to me.deviceId, "name" to me.name,
+                "members" to membersJson(o.members), "household_name" to o.householdName,
+            ),
+        )
         secure.sendRows(o.rows)
-        val joined = secure.receiveJson("joined")
-        return Joined(joined.getString("device"), joined.getString("name"))
+        secure.receiveJson("joined")
+        return who
     }
 
-    /** The joining phone. */
-    suspend fun joiner(link: Link, me: Me, confirm: suspend (code: String) -> Boolean): Household {
+    /**
+     * The joining phone. [alreadyIn] tells whether one of this phone's databases already is in the
+     * offered household: then it refuses (so the adder doesn't list it twice) and throws [AlreadyIn].
+     */
+    suspend fun joiner(
+        link: Link,
+        me: Me,
+        alreadyIn: suspend (householdId: String) -> Boolean = { false },
+        confirm: suspend (code: String) -> Boolean,
+    ): Household {
         link.send(json("pair", "v" to SyncSession.VERSION))
         val commit = unb64(parse(link.receive(), "commit").getString("c"))
         val kp = SyncCrypto.keyPair()
@@ -187,13 +290,21 @@ object Pairing {
         val secure = SecureLink(link, SyncCrypto.hkdf(shared, transcript, "mostor pair b2a"), SyncCrypto.hkdf(shared, transcript, "mostor pair a2b"))
         exchangeConfirmations(secure, confirm(SyncCrypto.pairingCode(shared, transcript)))
 
+        secure.sendJson(json("me", "device" to me.deviceId, "name" to me.name))
         val h = secure.receiveJson("household")
         val rows = secure.receiveRows()
-        secure.sendJson(json("joined", "device" to me.deviceId, "name" to me.name))
+        val id = h.getString("id")
+        if (alreadyIn(id)) {
+            secure.sendJson(json("refuse", "why" to "already"))
+            runCatching { link.awaitPeerClose() }
+            throw AlreadyIn(id)
+        }
+        secure.sendJson(json("joined"))
         link.awaitPeerClose()
         val key = unb64(h.getString("key"))
         if (key.size != 32) throw ProtocolException("household key size")
-        return Household(h.getString("id"), key, h.getString("device"), h.getString("name"), rows)
+        if (me.isMine(h.getString("device"))) throw ProtocolException("the other phone claims this phone's id")
+        return Household(id, key, h.getString("device"), h.getString("name"), rows, membersOf(h), h.optStringOrNull("household_name"))
     }
 
     private fun exchangeConfirmations(secure: SecureLink, mine: Boolean) {
@@ -208,14 +319,28 @@ object Pairing {
 internal fun json(type: String, vararg fields: Pair<String, Any?>): ByteArray =
     JSONObject().put("t", type).apply { fields.forEach { (k, v) -> put(k, v ?: JSONObject.NULL) } }.toString().toByteArray(Charsets.UTF_8)
 
-internal fun parse(bytes: ByteArray, expected: String): JSONObject {
+/**
+ * Reads a message of type [expected]. A refusal ends the session with [RefusedByPeer], but only when it
+ * came [encrypted]: a phone of the household only ever refuses through [SecureLink], and a refusal in
+ * the clear could come from any device nearby (it would make this phone leave its household).
+ */
+internal fun parse(bytes: ByteArray, expected: String, encrypted: Boolean = false): JSONObject {
     val o = try {
         JSONObject(bytes.utf8())
     } catch (e: org.json.JSONException) {
         throw ProtocolException("not a message")
     }
     val t = o.optString("t")
-    if (t == "refuse") throw ProtocolException("refused: ${o.optString("why")}")
+    if (t == "refuse") {
+        if (!encrypted) throw ProtocolException("a refusal in the clear")
+        throw RefusedByPeer(
+            removed = o.optString("why") == "removed",
+            peerId = o.optString("device").takeIf { it.isNotEmpty() },
+            peerName = o.optString("name").takeIf { it.isNotEmpty() },
+            by = o.optString("by").takeIf { it.isNotEmpty() },
+            already = o.optString("why") == "already",
+        )
+    }
     if (t != expected) throw ProtocolException("expected $expected, got $t")
     return o
 }
@@ -225,7 +350,7 @@ internal fun SecureLink.sendJson(body: ByteArray) = send(SecureLink.JSON, body)
 internal fun SecureLink.receiveJson(expected: String): JSONObject {
     val (type, body) = receive()
     if (type != SecureLink.JSON) throw ProtocolException("expected a message")
-    return parse(body, expected)
+    return parse(body, expected, encrypted = true)
 }
 
 internal fun SecureLink.sendRows(rows: Merge.Rows) =
@@ -245,6 +370,43 @@ internal fun SecureLink.receiveRows(): Merge.Rows {
         BackupJson.Read.NotABackup -> throw ProtocolException("rows didn't read")
     }
 }
+
+/** The household's list of phones as JSON (SPEC §9.4). */
+internal fun membersJson(members: List<Member>): JSONArray = JSONArray().apply {
+    for (m in members) {
+        put(
+            JSONObject()
+                .put("device", m.deviceId).put("name", m.name).put("added_by", m.addedBy ?: JSONObject.NULL)
+                .put("added_at", m.addedAt).put("removed_at", m.removedAt ?: JSONObject.NULL)
+                .put("removed_by", m.removedBy ?: JSONObject.NULL).put("hlc", m.hlc),
+        )
+    }
+}
+
+/** The list of phones in [message] (none when it has no `members`); a malformed row ends the session. */
+internal fun membersOf(message: JSONObject): List<Member> {
+    val a = message.optJSONArray("members") ?: return emptyList()
+    return try {
+        (0 until a.length()).map { i ->
+            val o = a.getJSONObject(i)
+            val hlc = o.getString("hlc")
+            if (hlc != Roster.SEED_HLC) HlcStamp.parse(hlc)
+            Member(
+                deviceId = o.getString("device"),
+                name = o.getString("name"),
+                addedBy = o.optStringOrNull("added_by"),
+                addedAt = o.getLong("added_at"),
+                removedAt = if (o.isNull("removed_at")) null else o.getLong("removed_at"),
+                removedBy = o.optStringOrNull("removed_by"),
+                hlc = hlc,
+            )
+        }
+    } catch (e: Exception) {
+        throw ProtocolException("phones didn't read")
+    }
+}
+
+private fun JSONObject.optStringOrNull(key: String): String? = if (isNull(key)) null else getString(key)
 
 internal fun Merge.Rows.size() = children.size + events.size + segments.size + presets.size
 

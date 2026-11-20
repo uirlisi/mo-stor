@@ -27,6 +27,9 @@ class MoStorApp : Application() {
         // Off the main thread: opens the database (warming it for the quick sheet) and re-posts
         // the notification on every app start (SPEC §6.1); then the daily backup, if due (SPEC §8).
         container.appScope.launch {
+            // The phone's list of households first (a small file, read once): usually ready before
+            // the first screen asks for it on the main thread.
+            container.households.list()
             container.notifier.refresh()
             // The theme choice travels with the database (a phone-to-phone transfer); Android's
             // copy of it doesn't. Re-applying the same mode is a no-op.

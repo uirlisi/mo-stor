@@ -109,18 +109,10 @@ fun LogScreen(ui: AppUi) {
     }
 
     if (adding && st != null) {
-        AddRecordDialog(st.settings.visibility, fmt, onPick = { k ->
-            adding = false
-            ui.open(Route.Add(k))
-        }, onDismiss = { adding = false })
+        AddRecordDialog(ui, st.settings.visibility, onClose = { adding = false })
     }
     duplicateOf?.let { item ->
-        val all = log?.days.orEmpty().flatMap { it.items }
-        val group = listOf(item) + all.filter { it.event.id in item.duplicates }
-        DuplicateDialog(group, fmt, now, unit, onKeep = { keep ->
-            duplicateOf = null
-            for (other in group.map { it.event.id }.filter { it != keep }) ui.act({ repository.delete(other) })
-        }, onDismiss = { duplicateOf = null })
+        DuplicateDialog(ui, item, log?.days.orEmpty().flatMap { it.items }, now, unit, onClose = { duplicateOf = null })
     }
 
     Box(Modifier.fillMaxSize()) {

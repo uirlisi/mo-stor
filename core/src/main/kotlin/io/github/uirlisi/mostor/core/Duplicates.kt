@@ -19,7 +19,7 @@ object Duplicates {
         val out = HashMap<String, MutableSet<String>>()
         events.asSequence()
             .filter { it.deletedAt == null }
-            .groupBy { Key(it.childId, it.kind, it.subtype ?: it.supplementPresetId ?: it.supplementName ?: it.note?.trim()) }
+            .groupBy { Key(it.childId, it.kind, sortOf(it)) }
             .values
             .forEach { group ->
                 val sorted = group.sortedBy { it.startAt }
@@ -36,6 +36,13 @@ object Duplicates {
                 }
             }
         return out
+    }
+
+    /** What tells two records of one kind apart: the subtype; a med's preset; a note's text. */
+    private fun sortOf(e: Event): String? = when (e.kind) {
+        Kind.SUPPLEMENT -> e.supplementPresetId ?: e.supplementName
+        Kind.NOTE -> e.note?.trim()
+        else -> e.subtype
     }
 
     private data class Key(val child: String, val kind: Kind, val sub: String?)

@@ -3,6 +3,7 @@ package io.github.uirlisi.mostor.notify
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.SystemClock
 import io.github.uirlisi.mostor.container
 import io.github.uirlisi.mostor.data.Source
 import kotlinx.coroutines.launch
@@ -14,6 +15,7 @@ import kotlinx.coroutines.launch
 class ActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action ?: return
+        if (action in BUTTONS && !guard.accept(SystemClock.elapsedRealtime())) return
         val eventId = intent.getStringExtra(EXTRA_EVENT_ID)
         val undoId = intent.getStringExtra(EXTRA_UNDO_ID)
         val c = context.container
@@ -65,6 +67,13 @@ class ActionReceiver : BroadcastReceiver() {
         const val ACTION_TICK = P + "TICK"
         const val EXTRA_EVENT_ID = "event_id"
         const val EXTRA_UNDO_ID = "undo_id"
+
+        /** The notification's buttons, which a double tap must not fire twice ([ButtonGuard]). */
+        private val BUTTONS = setOf(
+            ACTION_STOP, ACTION_SWITCH, ACTION_CANCEL, ACTION_PAUSE, ACTION_RESUME, ACTION_STILL_GOING,
+            ACTION_UNDO, ACTION_KEEP_EARLIER, ACTION_KEEP_LATER, ACTION_KEEP_BOTH,
+        )
+        private val guard = ButtonGuard()
     }
 }
 

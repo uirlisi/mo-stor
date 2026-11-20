@@ -37,6 +37,25 @@ class PauseTest {
     }
 
     @Test
+    fun `after a resume, the nudge and the give-up count feeding time only`() {
+        // Fed 14:00–14:15, paused 40 min (under the 45 min that would end it), resumed 14:55.
+        val id = startLeft()
+        cx.now = at(15)
+        table.apply(Timers.pause(table.timed(id), cx.now, cx))
+        cx.now = at(55)
+        table.apply(Timers.resume(table.timed(id), Side.LEFT, cx.now, cx))
+        val limits = OverrunLimits.BREAST_DEFAULT
+        // At 14:56 it has fed 16 min: no "Still feeding?" right after the resume.
+        assertEquals(OverrunState.NORMAL, Overrun.state(table.timed(id), at(56), limits, null))
+        // 45 min of feeding come at 15:25 (14:00 + 45 + the 40 paused).
+        assertEquals(at(85), Overrun.nextCheck(table.timed(id), at(56), limits, null))
+        assertEquals(OverrunState.NUDGE, Overrun.state(table.timed(id), at(85), limits, null))
+        // The give-up too: 3 h of feeding, at 17:40, not 17:00.
+        assertEquals(OverrunState.NUDGE, Overrun.state(table.timed(id), at(179), limits, null))
+        assertEquals(OverrunState.GIVE_UP, Overrun.state(table.timed(id), at(220), limits, null))
+    }
+
+    @Test
     fun `resume on the same side, and the paused time doesn't count`() {
         val id = pausedAt10()
         cx.now = at(15)

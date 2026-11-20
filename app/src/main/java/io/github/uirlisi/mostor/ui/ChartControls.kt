@@ -12,7 +12,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -44,10 +44,10 @@ fun ChipRow(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
 @Composable
 fun ChartChildPicker(view: ChartView, fmt: Formats, onPick: (String) -> Unit) {
     if (view.children.size < 2) return
-    val context = LocalContext.current
+    val res = LocalResources.current
     ChildPicker(
         childOptions(view.children, fmt, view::colorIndex), view.childId,
-        contentDescription = { context.getString(R.string.picker_child_cd, it) },
+        contentDescription = { res.getString(R.string.picker_child_cd, it) },
         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
         onSelect = onPick,
     )

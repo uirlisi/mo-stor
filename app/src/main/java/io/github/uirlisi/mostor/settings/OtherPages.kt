@@ -48,6 +48,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,9 +60,14 @@ import io.github.uirlisi.mostor.ui.RecordIcon
 import io.github.uirlisi.mostor.ui.chartColors
 import io.github.uirlisi.mostor.ui.of
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.uirlisi.mostor.R
 import io.github.uirlisi.mostor.core.BottleContent
@@ -151,19 +157,20 @@ fun PresetSettings(ui: AppUi) {
     val fmt = ui.fmt
     val home by remember { repo.homeStates() }.collectAsStateWithLifecycle(initialValue = null)
     val all by remember { repo.presetsFlow() }.collectAsStateWithLifecycle(initialValue = emptyList())
-    var picked by remember { mutableStateOf<String?>(null) }
-    var editing by remember { mutableStateOf<SupplementPreset?>(null) }
-    var adding by remember { mutableStateOf(false) }
+    var picked by rememberSaveable { mutableStateOf<String?>(null) }
+    // The med being edited, by id (saveable: the dialog stays open through a rotation).
+    var editingId by rememberSaveable { mutableStateOf<String?>(null) }
+    var adding by rememberSaveable { mutableStateOf(false) }
     val st = home ?: return
     val childId = picked?.takeIf { id -> st.children.any { it.id == id } } ?: st.childId
     val presets = all.filter { it.childId == childId }
 
     SubPage(ui, stringResource(R.string.set_supplements)) {
         if (st.severalChildren) {
-            val context = LocalContext.current
+            val res = LocalResources.current
             ChildPicker(
                 childOptions(st.children, fmt, st::colorIndex), childId,
-                contentDescription = { context.getString(R.string.picker_child_cd, it) },
+                contentDescription = { res.getString(R.string.picker_child_cd, it) },
             ) { id ->
                 picked = id
             }
@@ -171,7 +178,7 @@ fun PresetSettings(ui: AppUi) {
         Hint(R.string.set_supplements_hint)
         presets.forEachIndexed { i, p ->
             Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f).clickable { editing = p }.padding(vertical = 8.dp)) {
+                Column(Modifier.weight(1f).clickable { editingId = p.id }.padding(vertical = 8.dp)) {
                     Text(fmt.supplement(p.name, p.amount, p.unit), style = MaterialTheme.typography.titleMedium)
                     Text(planText(p.plan()), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -189,19 +196,19 @@ fun PresetSettings(ui: AppUi) {
         OutlinedButton(onClick = { adding = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.preset_add)) }
     }
 
-    val target = editing
+    val target = editingId?.let { id -> all.firstOrNull { it.id == id } }
     if (adding || target != null) {
         PresetDialog(
             target,
             onDismiss = {
                 adding = false
-                editing = null
+                editingId = null
             },
             onSave = { name, amount, unit, plan ->
                 if (target == null) ui.act({ repo.addPreset(childId, name, amount, unit, plan) })
                 else ui.act({ repo.editPreset(target.id, name, amount, unit, plan) })
                 adding = false
-                editing = null
+                editingId = null
             },
         )
     }
@@ -212,7 +219,7 @@ fun PresetSettings(ui: AppUi) {
 private fun planText(plan: MedPlan): String = when (plan.schedule) {
     MedSchedule.DAILY -> stringResource(R.string.set_meds_daily)
     MedSchedule.WEEKLY -> stringResource(R.string.set_meds_weekly) + " · " + weekdayName(plan.weekday ?: 1, TextStyle.FULL)
-    MedSchedule.EVERY_N_DAYS -> stringResource(R.string.set_meds_every, plan.everyDays ?: 2)
+    MedSchedule.EVERY_N_DAYS -> (plan.everyDays ?: 2).let { pluralStringResource(R.plurals.set_meds_every, it, it) }
     MedSchedule.AS_NEEDED -> stringResource(R.string.set_meds_as_needed)
 }
 
@@ -221,16 +228,16 @@ private fun weekdayName(day: Int, style: TextStyle): String = DayOfWeek.of(day).
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun PresetDialog(p: SupplementPreset?, onDismiss: () -> Unit, onSave: (String, Double?, String?, MedPlan) -> Unit) {
-    var name by remember { mutableStateOf(p?.name.orEmpty()) }
-    var amount by remember { mutableStateOf(p?.amount) }
-    var unit by remember { mutableStateOf(p?.unit.orEmpty()) }
+    var name by rememberSaveable { mutableStateOf(p?.name.orEmpty()) }
+    var amount by rememberSaveable { mutableStateOf(p?.amount) }
+    var unit by rememberSaveable { mutableStateOf(p?.unit.orEmpty()) }
     val current = p?.plan() ?: MedPlan()
-    var schedule by remember { mutableStateOf(current.schedule) }
-    var weekday by remember { mutableStateOf(current.weekday ?: LocalDate.now().dayOfWeek.value) }
-    var every by remember { mutableStateOf(current.everyDays ?: 2) }
+    var schedule by rememberSaveable { mutableStateOf(current.schedule) }
+    var weekday by rememberSaveable { mutableStateOf(current.weekday ?: LocalDate.now().dayOfWeek.value) }
+    var every by rememberSaveable { mutableStateOf(current.everyDays ?: 2) }
     // Every N days counts from a start the owner can pick (today by default); the others from when they are saved.
-    var start by remember { mutableStateOf(current.start?.takeIf { current.schedule == MedSchedule.EVERY_N_DAYS }) }
-    var picking by remember { mutableStateOf(false) }
+    var start by rememberSaveable { mutableStateOf(current.start?.takeIf { current.schedule == MedSchedule.EVERY_N_DAYS }) }
+    var picking by rememberSaveable { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.preset_edit)) },
@@ -266,15 +273,23 @@ private fun PresetDialog(p: SupplementPreset?, onDismiss: () -> Unit, onSave: (S
                             for (d in 1..7) {
                                 val on = weekday == d
                                 val s = MaterialTheme.colorScheme
+                                // The full name for a screen reader: the narrow letters repeat (S, S; T, T).
+                                val fullName = weekdayName(d, TextStyle.FULL)
                                 Box(
                                     Modifier
-                                        .size(44.dp)
+                                        .size(48.dp)
                                         .background(if (on) s.primary else s.surfaceContainerHigh, CircleShape)
                                         .border(1.dp, if (on) s.primary else s.outlineVariant, CircleShape)
-                                        .selectable(selected = on, role = Role.RadioButton) { weekday = d },
+                                        .selectable(selected = on, role = Role.RadioButton) { weekday = d }
+                                        .semantics { contentDescription = fullName },
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    Text(weekdayName(d, TextStyle.NARROW), color = if (on) s.onPrimary else s.onSurface, style = MaterialTheme.typography.labelLarge)
+                                    Text(
+                                        weekdayName(d, TextStyle.NARROW),
+                                        color = if (on) s.onPrimary else s.onSurface,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        modifier = Modifier.clearAndSetSemantics {},
+                                    )
                                 }
                             }
                         }
@@ -287,7 +302,7 @@ private fun PresetDialog(p: SupplementPreset?, onDismiss: () -> Unit, onSave: (S
                     MedSchedule.EVERY_N_DAYS -> {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = { every = (every - 1).coerceAtLeast(2) }, enabled = every > 2) { Text(stringResource(R.string.sheet_less)) }
-                            Text(stringResource(R.string.set_meds_every, every), style = MaterialTheme.typography.titleMedium)
+                            Text(pluralStringResource(R.plurals.set_meds_every, every, every), style = MaterialTheme.typography.titleMedium)
                             OutlinedButton(onClick = { every += 1 }) { Text(stringResource(R.string.sheet_more)) }
                         }
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -350,7 +365,7 @@ fun AboutPage(ui: AppUi) {
         Text(stringResource(R.string.about_no_internet))
         Text(stringResource(R.string.about_check), style = MaterialTheme.typography.bodyMedium)
         Text(stringResource(R.string.about_licences_title), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 12.dp))
-        Text(stringResource(R.string.about_free_software))
+        Text(namedString(R.string.about_free_software))
         Text(stringResource(R.string.about_licences), style = MaterialTheme.typography.bodyMedium)
     }
 }

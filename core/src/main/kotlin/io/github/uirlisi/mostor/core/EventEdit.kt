@@ -135,7 +135,8 @@ object EventEdit {
      */
     fun bounds(d: EventDraft, f: TimeField, now: Long): LongRange = when (f) {
         TimeField.Start -> Long.MIN_VALUE..(d.endAt ?: now)
-        TimeField.End -> d.startAt..now
+        // A breast feed's end is its last segment's: it stays after that segment's start.
+        TimeField.End -> if (d.kind == Kind.BREAST && d.segments.isNotEmpty()) bounds(d, TimeField.SegmentEnd(d.segments.lastIndex), now) else d.startAt..now
         is TimeField.SegmentStart -> {
             val prev = d.segments.getOrNull(f.index - 1)
             val seg = d.segments[f.index]
@@ -223,8 +224,14 @@ object EventEdit {
     private const val ROOM_MS = 2 * MIN
 
     /** Removes a segment; a feed keeps at least one (deleting the feed removes it). */
-    fun removeSegment(d: EventDraft, index: Int): EventDraft =
-        if (d.segments.size <= 1 || index !in d.segments.indices) d else d.copy(segments = d.segments.filterIndexed { i, _ -> i != index })
+    fun removeSegment(d: EventDraft, index: Int): EventDraft {
+        if (d.segments.size <= 1 || index !in d.segments.indices) return d
+        val rest = d.segments.filterIndexed { i, _ -> i != index }
+        // A feed whose end is unknown keeps its last segment open: removing the open one reopens the one
+        // before, so the end stays unknown instead of quietly becoming that segment's end.
+        val reopened = if (d.endUnknown && index == d.segments.lastIndex) rest.dropLast(1) + rest.last().copy(endAt = null) else rest
+        return d.copy(segments = reopened)
+    }
 
     /**
      * Marks the end unknown (it is stored as unknown, never guessed), or sets it to [end] again.
@@ -373,7 +380,8 @@ object EventEdit {
                 if (old.id !in kept) segments += RowChange(old, old.copy(deletedAt = cx.now).touched(cx))
             }
         }
-        return Change(events, segments)
+        val change = Change(events, segments)
+        return if (original != null) change.touchingEvent(original, cx) else change
     }
 
     /** Deletes a record (soft delete of the event and its segments; SPEC §4.1). */

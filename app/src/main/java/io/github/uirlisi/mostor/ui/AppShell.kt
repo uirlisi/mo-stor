@@ -1,6 +1,17 @@
 package io.github.uirlisi.mostor.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,12 +41,14 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Modifier
@@ -170,6 +183,7 @@ class AppUi(
 fun AppShell(c: AppContainer) {
     val context = LocalContext.current
     var tab by rememberSaveable { mutableStateOf(Tab.TODAY) }
+    val tabStates = rememberSaveableStateHolder()
     val stack = rememberSaveable(saver = listSaver(save = { it.toList() }, restore = { mutableStateListOf(*it.toTypedArray()) })) {
         mutableStateListOf<String>()
     }
@@ -181,6 +195,7 @@ fun AppShell(c: AppContainer) {
         AppUi(c.repository, c.notifier, c.appScope, Formats(context), scope, snackbar, stack, undoLabel, refused) { tab = it }
     }
     val top = stack.lastOrNull()?.let(Route::decode)
+    val households by c.households.flow.collectAsStateWithLifecycle()
 
     // Back closes the screen on top (the edit screen adds its own check for unsaved changes),
     // then goes back to Today before leaving the app.
@@ -233,21 +248,65 @@ fun AppShell(c: AppContainer) {
             }
         },
     ) { inner ->
-        Box(Modifier.fillMaxSize().padding(inner).consumeWindowInsets(inner)) {
-            when (top) {
-                null -> when (tab) {
-                    Tab.TODAY -> TodayScreen(ui)
-                    Tab.LOG -> LogScreen(ui)
-                    Tab.PATTERNS -> PatternsScreen(ui)
-                    Tab.STATS -> StatsScreen(ui)
-                    Tab.SETTINGS -> SettingsScreen(ui)
+        Column(Modifier.fillMaxSize().padding(inner).consumeWindowInsets(inner)) {
+            // With two or more households, which one this is (SPEC §9.4). A label, not a switch: it
+            // opens Settings › Households and phones, so a stray tap can't send records to the wrong household.
+            if (top == null && households.several) {
+                HouseholdLabel(c.nameOf(households.active)) { ui.open(Route.Settings(SettingsPage.HOUSEHOLD)) }
+            }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when (top) {
+                    // Each tab keeps its saved state (the day Today shows, how far Log is scrolled)
+                    // while an edit or a settings page is open over it, and when another tab is chosen.
+                    null -> tabStates.SaveableStateProvider(tab.name) {
+                        when (tab) {
+                            Tab.TODAY -> TodayScreen(ui)
+                            Tab.LOG -> LogScreen(ui)
+                            Tab.PATTERNS -> PatternsScreen(ui)
+                            Tab.STATS -> StatsScreen(ui)
+                            Tab.SETTINGS -> SettingsScreen(ui)
+                        }
+                    }
+                    // One composition per route: two edits in a row never share state.
+                    is Route.Edit -> key(top) { EditScreen(ui, eventId = top.eventId, newKind = null) }
+                    is Route.Add -> key(top) { EditScreen(ui, eventId = null, newKind = top.kind) }
+                    is Route.Settings -> key(top) { SettingsScreen(ui, top.page, top.arg) }
                 }
-                is Route.Edit -> EditScreen(ui, eventId = top.eventId, newKind = null)
-                is Route.Add -> EditScreen(ui, eventId = null, newKind = top.kind)
-                is Route.Settings -> SettingsScreen(ui, top.page, top.arg)
             }
         }
     }
+}
+
+/** The active household's name over the tabs; a tap opens Settings › Households and phones. */
+@Composable
+private fun HouseholdLabel(name: String, onClick: () -> Unit) {
+    val description = stringResource(R.string.household_label_desc, name)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 40.dp)
+            .clickable(onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = description }
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            name,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        Icon(
+            painterResource(R.drawable.ic_next),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp),
+        )
+    }
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }
 
 /** The system navigation bar's height, which the bottom bar draws behind. */

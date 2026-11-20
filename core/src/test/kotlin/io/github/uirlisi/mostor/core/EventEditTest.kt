@@ -159,6 +159,30 @@ class EventEditTest {
     }
 
     @Test
+    fun `a feed's end, nudged after end unknown is turned off, stays after its last segment's start`() {
+        val id = endedFeed() // L 14:00–14:15, R 14:18–14:30
+        val unknown = EventEdit.setEndUnknown(draft(id), true)
+        // Turned off again with the end at the last segment's start, then nudged back 5 min.
+        val known = EventEdit.setEndUnknown(unknown, false, at(18))
+        assertEquals(at(18)..at(60), EventEdit.bounds(known, TimeField.End, at(60)))
+        val nudged = EventEdit.nudge(known, TimeField.End, -5 * MIN, at(60))
+        assertEquals(at(18), nudged.segments.last().endAt)
+        assertTrue(EventEdit.problems(nudged, at(60)).isEmpty())
+    }
+
+    @Test
+    fun `removing the open last segment of a feed with no end keeps the end unknown`() {
+        val id = endedFeed()
+        val unknown = EventEdit.setEndUnknown(draft(id), true)
+        val removed = EventEdit.removeSegment(unknown, 1)
+        assertEquals(1, removed.segments.size)
+        assertNull(removed.segments.single().endAt)
+        assertTrue(removed.endUnknown)
+        // Removing the first one leaves the open last one as it was.
+        assertNull(EventEdit.removeSegment(unknown, 0).segments.single().endAt)
+    }
+
+    @Test
     fun `end unknown clears the last segment's end and can be set again`() {
         val id = endedFeed()
         cx.now = at(60)

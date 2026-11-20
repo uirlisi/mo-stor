@@ -35,6 +35,30 @@ class SummaryDuplicatesVisibilityTest {
     }
 
     @Test
+    fun `with the day starting at 06_00, a sleep across 06_00 is split there`() {
+        val six = DayClock(6, DUBLIN)
+        sleep(t(5), t(7))
+        val before = DaySummary.totals(table.events.values.toList(), emptyList(), day.minusDays(1), six, t(20))
+        val after = DaySummary.totals(table.events.values.toList(), emptyList(), day, six, t(20))
+        assertEquals(HOUR, before.sleepMs)
+        assertEquals(HOUR, after.sleepMs)
+        // It is counted once, on the day it started (05:00 belongs to the day before).
+        assertEquals(1, before.sleeps)
+        assertEquals(0, after.sleeps)
+    }
+
+    @Test
+    fun `on the day the clocks go forward, a night's sleep counts its real length`() {
+        // Dublin, 29 Mar 2026: 01:00 becomes 02:00, so 23:00–07:00 by the clock is 7 hours.
+        val spring = LocalDate.of(2026, 3, 29)
+        sleep(dublin(2026, 3, 28, 23, 0), dublin(2026, 3, 29, 7, 0))
+        val s = DaySummary.totals(table.events.values.toList(), emptyList(), spring, clock, dublin(2026, 3, 29, 20, 0))
+        val eve = DaySummary.totals(table.events.values.toList(), emptyList(), spring.minusDays(1), clock, dublin(2026, 3, 29, 20, 0))
+        assertEquals(6 * HOUR, s.sleepMs)
+        assertEquals(HOUR, eve.sleepMs)
+    }
+
+    @Test
     fun `a running sleep counts to now, an unknown end counts but adds no time`() {
         sleep(t(13), null)
         val unknown = sleep(t(9), null)
@@ -122,6 +146,20 @@ class SummaryDuplicatesVisibilityTest {
         val k = event("b", t(9, 1), "phone-b", Kind.SUPPLEMENT, null).copy(supplementPresetId = "vit-k")
         val d2 = event("c", t(9, 2), "phone-b", Kind.SUPPLEMENT, null).copy(supplementPresetId = "vit-d")
         assertEquals(mapOf("a" to setOf("c"), "c" to setOf("a")), Duplicates.find(listOf(d, k, d2)))
+    }
+
+    @Test
+    fun `a note on a sleep or feed doesn't hide a duplicate, and notes compare by text`() {
+        val s1 = event("a", t(2, 10), "phone-a", Kind.SLEEP, null)
+        val s2 = event("b", t(2, 11), "phone-b", Kind.SLEEP, null).copy(note = "fussy")
+        assertEquals(mapOf("a" to setOf("b"), "b" to setOf("a")), Duplicates.find(listOf(s1, s2)))
+        val f1 = event("c", t(3), "phone-a", Kind.BREAST, null).copy(note = "latched well")
+        val f2 = event("d", t(3, 2), "phone-b", Kind.BREAST, null)
+        assertEquals(mapOf("c" to setOf("d"), "d" to setOf("c")), Duplicates.find(listOf(f1, f2)))
+        val n1 = event("e", t(4), "phone-a", Kind.NOTE, null).copy(note = "doctor called")
+        val n2 = event("f", t(4, 1), "phone-b", Kind.NOTE, null).copy(note = "bath")
+        val n3 = event("g", t(4, 2), "phone-b", Kind.NOTE, null).copy(note = " doctor called ")
+        assertEquals(mapOf("e" to setOf("g"), "g" to setOf("e")), Duplicates.find(listOf(n1, n2, n3)))
     }
 
     @Test

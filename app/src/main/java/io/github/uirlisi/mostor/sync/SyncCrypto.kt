@@ -149,7 +149,7 @@ class Link(input: InputStream, output: OutputStream, private val close: () -> Un
     }
 }
 
-class ProtocolException(message: String) : Exception(message)
+open class ProtocolException(message: String) : Exception(message)
 
 /**
  * Encrypted messages over a [Link]: one AES-GCM key per direction, a counter as the nonce, so a

@@ -48,7 +48,32 @@ interface ChangeContext {
     fun nextHlc(): String
 }
 
-internal fun Event.touched(cx: ChangeContext): Event = copy(updatedAt = cx.now, hlc = cx.nextHlc())
+internal fun Event.touched(cx: ChangeContext): Event = copy(updatedAt = cx.now, hlc = cx.nextHlc(), autoBase = null)
+
+/**
+ * This change with [e] stamped too, when it changes only [e]'s segments (a side switch, a pause, a
+ * segment edit): the event row then shows that the record changed, which an automatic change made
+ * elsewhere from an older version must lose to ([Event.autoBase]; merges compare event rows).
+ */
+internal fun Change.touchingEvent(e: Event, cx: ChangeContext): Change =
+    if (segments.isEmpty() || events.any { it.after.id == e.id }) this else copy(events = events + RowChange(e, e.touched(cx)))
+
+/** The same change made automatically ([Event.autoBase]): each event sorts just after its "before". */
+internal fun Change.automatic(): Change =
+    copy(events = events.map { rc -> rc.before?.let { b -> rc.copy(after = rc.after.copy(autoBase = b.hlc)) } ?: rc })
+
+/**
+ * This change as a person's change: an event keeps [Event.autoBase] only when it was set from the very
+ * version it replaces ([automatic]); a version carried over from an automatic one (an undo, an edit)
+ * loses it. Every local write goes through this.
+ */
+fun Change.asLocal(): Change =
+    copy(
+        events = events.map { rc ->
+            val a = rc.after
+            if (a.autoBase != null && a.autoBase != rc.before?.hlc) rc.copy(after = a.copy(autoBase = null)) else rc
+        },
+    )
 
 internal fun BreastSegment.touched(cx: ChangeContext): BreastSegment = copy(updatedAt = cx.now, hlc = cx.nextHlc())
 

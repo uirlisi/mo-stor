@@ -2,7 +2,6 @@ package io.github.uirlisi.mostor.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -12,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -23,12 +23,16 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.uirlisi.mostor.R
 import io.github.uirlisi.mostor.core.ChildFields
@@ -64,13 +68,17 @@ fun ChildEditor(ui: AppUi, childId: String?) {
     }
     val imperial = unit == VolumeUnit.FL_OZ
 
-    var name by remember { mutableStateOf(child?.name.orEmpty()) }
-    var birthDate by remember { mutableStateOf(child?.birthDate) }
-    var sex by remember { mutableStateOf(child?.sex) }
-    var weightG by remember { mutableStateOf(child?.birthWeightG) }
-    var lengthMm by remember { mutableStateOf(child?.birthLengthMm) }
-    var color by remember { mutableStateOf(child?.color ?: CHILD_PALETTE[all.size.mod(CHILD_PALETTE.size)]) }
-    var pickingDate by remember { mutableStateOf(false) }
+    // Saveable: what was typed survives a rotation, a dark-mode switch or the app being stopped.
+    var name by rememberSaveable { mutableStateOf(child?.name.orEmpty()) }
+    var birthDate by rememberSaveable { mutableStateOf(child?.birthDate) }
+    var sex by rememberSaveable { mutableStateOf(child?.sex) }
+    var weightG by rememberSaveable { mutableStateOf(child?.birthWeightG) }
+    var lengthMm by rememberSaveable { mutableStateOf(child?.birthLengthMm) }
+    // A child without a color of its own shows the one of its place in the list (childArgb); a new
+    // child takes the next place's.
+    val place = child?.let { c -> all.indexOfFirst { it.id == c.id } }?.takeIf { it >= 0 } ?: all.size
+    var color by rememberSaveable { mutableStateOf(child?.color ?: CHILD_PALETTE[place.mod(CHILD_PALETTE.size)]) }
+    var pickingDate by rememberSaveable { mutableStateOf(false) }
     val fields = ChildFields(name, birthDate, sex, weightG, lengthMm, color)
     // The last child that isn't archived must stay, so there's always one to record for.
     val isLastActive = child != null && child.archivedAt == null && all.none { it.id != child.id && it.archivedAt == null }
@@ -120,8 +128,8 @@ fun ChildEditor(ui: AppUi, childId: String?) {
         if (imperial) {
             val totalOz = weightG?.let { it / G_PER_OZ }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                var lb by remember { mutableStateOf(totalOz?.let { (it / 16).toInt().toDouble() }) }
-                var oz by remember { mutableStateOf(totalOz?.let { ((it % 16) * 10).roundToInt() / 10.0 }) }
+                var lb by rememberSaveable { mutableStateOf(totalOz?.let { (it / 16).toInt().toDouble() }) }
+                var oz by rememberSaveable { mutableStateOf(totalOz?.let { ((it % 16) * 10).roundToInt() / 10.0 }) }
                 fun update() {
                     weightG = if (lb == null && oz == null) null else (((lb ?: 0.0) * 16 + (oz ?: 0.0)) * G_PER_OZ).roundToInt()
                 }
@@ -143,12 +151,16 @@ fun ChildEditor(ui: AppUi, childId: String?) {
 
         Label(R.string.child_color)
         ChipRow {
-            for (c in CHILD_PALETTE) {
+            for ((i, c) in CHILD_PALETTE.withIndex()) {
+                // A screen reader hears "Color 3, selected": one choice of several, like a radio button.
+                val description = stringResource(R.string.child_color_cd, i + 1)
                 Box(
-                    Modifier.size(48.dp).padding(4.dp)
+                    Modifier.size(48.dp)
+                        .selectable(selected = c == color, role = Role.RadioButton) { color = c }
+                        .semantics { contentDescription = description }
+                        .padding(4.dp)
                         .background(Color(c), CircleShape)
-                        .then(if (c == color) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape) else Modifier)
-                        .clickable { color = c },
+                        .then(if (c == color) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape) else Modifier),
                 )
             }
         }

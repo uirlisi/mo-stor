@@ -111,6 +111,7 @@ object BackupJson {
         .put("supplement_unit", supplementUnit.orNull())
         .put("note", note.orNull())
         .put("tz", tz)
+        .apply { autoBase?.let { put("auto_base", it) } }
 
     private fun BreastSegment.toJson() = JSONObject()
         .common(id, createdAt, updatedAt, deletedAt, hlc)
@@ -147,6 +148,7 @@ object BackupJson {
     }
 
     private fun JSONObject.str(key: String): String? = nullable(key, JSONObject::getString)
+    private fun JSONObject.optional(key: String): String? = if (has(key) && !isNull(key)) getString(key) else null
     private fun JSONObject.long(key: String): Long? = nullable(key, JSONObject::getLong)
     private fun JSONObject.int(key: String): Int? = nullable(key, JSONObject::getInt)
     private fun JSONObject.double(key: String): Double? = nullable(key, JSONObject::getDouble)
@@ -170,6 +172,8 @@ object BackupJson {
         supplementName = str("supplement_name"), supplementAmount = double("supplement_amount"),
         supplementUnit = str("supplement_unit"), note = str("note"), tz = getString("tz"),
         createdAt = getLong("created_at"), updatedAt = getLong("updated_at"), deletedAt = long("deleted_at"), hlc = hlc(),
+        // Optional: backups and rows from before schema 5 don't have it.
+        autoBase = optional("auto_base")?.also { HlcStamp.parse(it) },
     ).also { require(it.endAt == null || it.endAt!! >= it.startAt) { "end before start" } }
 
     private fun JSONObject.segment() = BreastSegment(

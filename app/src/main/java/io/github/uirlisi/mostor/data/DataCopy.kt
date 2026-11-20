@@ -60,7 +60,19 @@ object DataCopy {
      * place to the current schema (the same migrations as an app update) before it is read.
      */
     fun read(context: Context, file: File): Read {
-        val header = file.inputStream().use { it.readNBytes(HEADER.size) }
+        // Not readNBytes: Android has it only from API 33, and the app runs from API 31.
+        val header = ByteArray(HEADER.size).let { buf ->
+            val n = file.inputStream().use { input ->
+                var read = 0
+                while (read < buf.size) {
+                    val r = input.read(buf, read, buf.size - read)
+                    if (r < 0) break
+                    read += r
+                }
+                read
+            }
+            buf.copyOf(n)
+        }
         if (!header.contentEquals(HEADER)) return Read.NotACopy
         val (version, tables) = try {
             SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY).use { d ->
@@ -95,7 +107,7 @@ object DataCopy {
         },
     )
 
-    private fun Cursor.toValues() = ContentValues(columnCount).also { v ->
+    internal fun Cursor.toValues() = ContentValues(columnCount).also { v ->
         for (i in 0 until columnCount) {
             val name = getColumnName(i)
             when (getType(i)) {

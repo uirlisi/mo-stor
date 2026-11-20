@@ -193,4 +193,36 @@ class TimersTest {
         assertEquals(stamps.sorted(), stamps)
         assertEquals(stamps.size, stamps.toSet().size)
     }
+
+    @Test
+    fun `moving the end of a feed stopped at its pause moves its last segment and clears the automatic mark`() {
+        val id = startBreast()
+        cx.now = t0 + 18 * MIN
+        table.apply(Timers.pause(table.timed(id), cx.now, cx))
+        cx.now = t0 + 70 * MIN
+        table.apply(Timers.endForgottenPause(table.timed(id), cx))
+        assertTrue(table.events.getValue(id).autoBase != null)
+
+        cx.now = t0 + 75 * MIN
+        table.apply(Timers.moveEnd(table.timed(id), t0 + 25 * MIN, cx))
+        val t = table.timed(id)
+        assertEquals(EventStatus.ENDED, t.event.status)
+        assertEquals(t0 + 25 * MIN, t.event.endAt)
+        assertEquals(t0 + 25 * MIN, t.segments.single().endAt)
+        assertNull(t.event.autoBase)
+    }
+
+    @Test
+    fun `a moved end is clamped between the last segment's start and now`() {
+        val id = startBreast()
+        cx.now = t0 + 10 * MIN
+        table.apply(Timers.switchSide(table.timed(id), cx.now, cx))
+        cx.now = t0 + 20 * MIN
+        table.apply(Timers.stop(table.timed(id), cx.now, cx))
+        table.apply(Timers.moveEnd(table.timed(id), t0 + 5 * MIN, cx))
+        assertEquals(t0 + 10 * MIN, table.events.getValue(id).endAt)
+        table.apply(Timers.moveEnd(table.timed(id), t0 + 99 * MIN, cx))
+        assertEquals(t0 + 20 * MIN, table.events.getValue(id).endAt)
+        assertEquals(t0 + 20 * MIN, table.timed(id).segments.last().endAt)
+    }
 }

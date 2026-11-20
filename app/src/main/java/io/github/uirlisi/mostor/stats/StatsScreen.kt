@@ -31,9 +31,10 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.repeatOnLifecycle
 import io.github.uirlisi.mostor.R
 import io.github.uirlisi.mostor.core.BottleContent
 import io.github.uirlisi.mostor.core.ChartFocus
@@ -102,9 +103,14 @@ fun StatsScreen(ui: AppUi) {
     val range = ChartRange.ofOrNull(rangeCode)
     val topic = StatsTopic.ofOrNull(topicCode) ?: StatsTopic.FEEDS
     val focus = ChartFocus.decode(focusCode)?.takeIf { it == ChartFocus.All || it.kind == topic.subtypeKind } ?: ChartFocus.All
-    val view by produceState<ChartView?>(null, range, focus, showHidden, topic) {
+    // Collected only while the screen is started: the app mostly sits in the background while the
+    // notification records, and a 90-day chart needn't be rebuilt after every tap there.
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    val view by produceState<ChartView?>(null, range, focus, showHidden, topic, lifecycle) {
         if (range == null) return@produceState
-        repository.chartViews(range, focus, showHidden, withPatterns = false, withGaps = topic == StatsTopic.FEEDS).collect { value = it }
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            repository.chartViews(range, focus, showHidden, withPatterns = false, withGaps = topic == StatsTopic.FEEDS).collect { value = it }
+        }
     }
     val v = view ?: return
     LaunchedEffect(v.settings.unit) { ui.unit = v.settings.unit }
@@ -287,7 +293,7 @@ private fun ChartContext.readout(text: (DayPoint) -> String): String {
 
 @Composable
 private fun MetricCard(ctx: ChartContext, title: Int, metric: Metric, colors: List<Color>, withoutEnd: Boolean = false, note: String? = null) {
-    val r = LocalContext.current.resources
+    val r = LocalResources.current
     val footer = listOfNotNull(
         ctx.average(metric),
         Series.withoutEnd(ctx.points).takeIf { withoutEnd && it > 0 }?.let { r.getQuantityString(R.plurals.count_without_end, it, it) },
@@ -345,7 +351,7 @@ private fun BreastCard(ctx: ChartContext, focus: ChartFocus) {
 private fun FeedsCard(ctx: ChartContext) {
     val metric = Metric.FEEDS
     val title = stringResource(R.string.stats_feeds)
-    val r = LocalContext.current.resources
+    val r = LocalResources.current
     val footer = listOfNotNull(ctx.average(metric))
     val readout = ctx.readout { p ->
         val t = p.totals
@@ -407,7 +413,7 @@ private fun SupplementCard(ctx: ChartContext, focus: ChartFocus) {
     val days = ctx.points.filter { !it.beforeFirst }.size
     val footer = shown.map { p ->
         val given = ctx.points.count { pt -> pt.totals.supplements.any { it.presetId == p.id } }
-        ctx.fmt.string(R.string.stats_supplement_days, p.name, given, days)
+        ctx.fmt.plural(R.plurals.stats_supplement_days, days, p.name, given, days)
     }
     val readout = ctx.readout { p ->
         p.totals.supplements.joinToString(" · ") { s ->

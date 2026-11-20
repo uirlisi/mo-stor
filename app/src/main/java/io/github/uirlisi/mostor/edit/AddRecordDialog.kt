@@ -14,15 +14,26 @@ import io.github.uirlisi.mostor.R
 import io.github.uirlisi.mostor.core.Kind
 import io.github.uirlisi.mostor.core.Visibility
 import io.github.uirlisi.mostor.sheet.BigButton
+import io.github.uirlisi.mostor.ui.AppUi
 import io.github.uirlisi.mostor.ui.Formats
 import io.github.uirlisi.mostor.ui.KindIcons
 import io.github.uirlisi.mostor.ui.iconOf
 import io.github.uirlisi.mostor.ui.chartColors
 import io.github.uirlisi.mostor.ui.of
+import io.github.uirlisi.mostor.ui.Route
+
+/** [AddRecordDialog] on Today and in the log: the kind picked opens the edit screen. [onClose] closes it. */
+@Composable
+fun AddRecordDialog(ui: AppUi, visibility: Visibility, onClose: () -> Unit) {
+    AddRecordDialog(visibility, ui.fmt, onPick = { kind ->
+        onClose()
+        ui.open(Route.Add(kind))
+    }, onDismiss = onClose)
+}
 
 /** "Add a record": the kinds shown on this phone, then the edit screen prefilled at now. */
 @Composable
-fun AddRecordDialog(visibility: Visibility, fmt: Formats, onPick: (Kind) -> Unit, onDismiss: () -> Unit) {
+private fun AddRecordDialog(visibility: Visibility, fmt: Formats, onPick: (Kind) -> Unit, onDismiss: () -> Unit) {
     val colors = chartColors()
     AlertDialog(
         onDismissRequest = onDismiss,

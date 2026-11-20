@@ -3,7 +3,8 @@
   SPEC §8: nothing goes to cloud backup; a phone-to-phone transfer (Smart Switch, Google's
   "copy apps and data") takes the database. Every domain is excluded from the cloud, so a backup
   there holds nothing. The no_backup folder (this install's id) is never backed up or moved.
-  DECISIONS 2026-11-14, "Android backup rules".
+  DECISIONS 2026-11-14, "Android backup rules". The phone's list of households (phone.xml) moves
+  with the databases, so their names and the active one come along (Phase 5b).
 -->
 <data-extraction-rules>
     <cloud-backup>
@@ -19,5 +20,6 @@
     </cloud-backup>
     <device-transfer>
         <include domain="database" path="." />
+        <include domain="sharedpref" path="phone.xml" />
     </device-transfer>
 </data-extraction-rules>

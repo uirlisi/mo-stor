@@ -145,6 +145,29 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
     }
 }
 
+/** Schema version 4 (Phase 5 follow-up): the household's list of phones, synced (SPEC §9.4). */
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(MEMBER_TABLE_SQL)
+    }
+}
+
+/**
+ * Schema version 5 (review 2026-11-19): `event.auto_base`, the stamp an automatic change (a timer given
+ * up, a forgotten pause ended) was made from, so it loses to what another phone did meanwhile
+ * (`Event.autoBase`, SPEC §9.5). A nullable column; existing rows are a person's changes (null).
+ */
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `event` ADD COLUMN `auto_base` TEXT")
+    }
+}
+
+/** As Room's exported schema 4 has it (app/schemas/…/4.json). */
+internal const val MEMBER_TABLE_SQL =
+    "CREATE TABLE IF NOT EXISTS `member` (`device_id` TEXT NOT NULL, `name` TEXT NOT NULL, `added_by` TEXT, `added_at` INTEGER NOT NULL, " +
+        "`removed_at` INTEGER, `removed_by` TEXT, `hlc` TEXT NOT NULL, PRIMARY KEY(`device_id`))"
+
 /** As Room's exported schema 3 has it (app/schemas/…/3.json). */
 internal const val PEER_TABLE_SQL =
     "CREATE TABLE IF NOT EXISTS `peer` (`device_id` TEXT NOT NULL, `name` TEXT NOT NULL, `paired_at` INTEGER NOT NULL, " +

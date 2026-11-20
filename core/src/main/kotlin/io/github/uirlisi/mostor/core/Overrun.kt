@@ -35,7 +35,7 @@ object Overrun {
     fun nudgeAt(startAt: Long, limits: OverrunLimits, snoozedUntil: Long?): Long? =
         if (limits.nudgeAfterMs == null) null else snoozedUntil ?: (startAt + limits.nudgeAfterMs)
 
-    /** Give-up is measured from the start; "Still going" doesn't move it. */
+    /** Give-up is measured from the start ([countsFrom] for a timer); "Still going" doesn't move it. */
     fun giveUpAt(startAt: Long, limits: OverrunLimits): Long? = limits.giveUpAfterMs?.let { startAt + it }
 
     fun state(startAt: Long, now: Long, limits: OverrunLimits, snoozedUntil: Long?): OverrunState {
@@ -52,18 +52,26 @@ object Overrun {
     fun pauseEndsAt(pausedAt: Long, limits: OverrunLimits): Long? = limits.nudgeAfterMs?.let { pausedAt + it }
 
     /**
+     * Where a running timer's nudge and give-up count from: its start, moved on by the time a feed was
+     * paused, so only feeding time counts. A feed resumed after a long pause isn't asked "Still
+     * feeding?" at once, and its pauses don't bring the give-up nearer (review 2026-11-19).
+     */
+    fun countsFrom(t: TimedEvent, now: Long): Long =
+        if (t.event.kind == Kind.BREAST && t.segments.isNotEmpty()) now - Durations.breast(t.segments, now).totalMs else t.event.startAt
+
+    /**
      * [state] for a timer: a paused feed never nudges or gives up; it ends at its pause once it
      * has been paused for the nudge interval (all its feeding time was recorded).
      */
     fun state(t: TimedEvent, now: Long, limits: OverrunLimits, snoozedUntil: Long?): OverrunState {
-        val pausedAt = t.pausedAt ?: return state(t.event.startAt, now, limits, snoozedUntil)
+        val pausedAt = t.pausedAt ?: return state(countsFrom(t, now), now, limits, snoozedUntil)
         val endsAt = pauseEndsAt(pausedAt, limits)
         return if (endsAt != null && now >= endsAt) OverrunState.END_AT_PAUSE else OverrunState.NORMAL
     }
 
     /** [nextCheck] for a timer, paused feeds included. */
     fun nextCheck(t: TimedEvent, now: Long, limits: OverrunLimits, snoozedUntil: Long?): Long? {
-        val pausedAt = t.pausedAt ?: return nextCheck(t.event.startAt, now, limits, snoozedUntil)
+        val pausedAt = t.pausedAt ?: return nextCheck(countsFrom(t, now), now, limits, snoozedUntil)
         return pauseEndsAt(pausedAt, limits)?.takeIf { it > now }
     }
 

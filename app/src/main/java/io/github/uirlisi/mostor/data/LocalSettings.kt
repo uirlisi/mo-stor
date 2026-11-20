@@ -207,6 +207,30 @@ object Keys {
      */
     const val SYNC_PENDING_MATCH = "sync_pending_match"
 
+    /**
+     * Phones this one removed from the household that haven't been told yet (JSON: device id → when),
+     * so this phone keeps listening for them for a while (SPEC §9.4).
+     */
+    const val SYNC_FAREWELL = "sync_farewell"
+
+    /** After another phone removed this one: that phone's name, shown once in Settings › Sync. */
+    const val SYNC_REMOVED_BY = "sync_removed_by"
+
+    /**
+     * After this phone left its household by itself, shown once in Settings › Sync: "1" when it told
+     * one of its phones, "later" when it will tell them the next time one is near ([SYNC_PARTING]).
+     */
+    const val SYNC_LEFT = "sync_left"
+
+    /**
+     * After leaving without reaching another phone (SPEC §9.4): the old household's id, its key
+     * (wrapped by the Keystore), this phone's "left" row and until when it may still tell them (JSON).
+     */
+    const val SYNC_PARTING = "sync_parting"
+
+    /** Another phone's leaving shown in Settings › Sync (by device id; the value is when it left). */
+    const val DEPARTED_SEEN_PREFIX = "departed_seen:"
+
     /** Running timers the owner chose to keep both of (SPEC §9.5), by `TimerConflict.key`. */
     const val CONFLICT_KEPT_PREFIX = "conflict_kept:"
 

@@ -89,7 +89,8 @@ object Series {
     ): List<DayPoint> {
         if (to < from) return emptyList()
         val segs = segments.filter { it.deletedAt == null && focus.matches(it) }
-        val sidesByEvent = segs.groupBy({ it.eventId }, { it.side }).mapValues { it.value.toSet() }
+        val segsByEvent = segs.groupBy { it.eventId }
+        val sidesByEvent = segsByEvent.mapValues { (_, list) -> list.mapTo(HashSet()) { it.side } }
         val live = events.filter { e ->
             e.deletedAt == null && (focus !is ChartFocus.OnSide || focus.side in sidesByEvent[e.id].orEmpty())
         }
@@ -117,7 +118,8 @@ object Series {
             val started = es.filter { clock.dayOf(it.startAt) == day && it.kind == Kind.BREAST }
             out += DayPoint(
                 day = day,
-                totals = DaySummary.totals(es, segs, day, clock, now),
+                // Only the day's own records' segments: a 90-day chart needn't regroup all of them daily.
+                totals = DaySummary.totals(es, es.flatMap { segsByEvent[it.id].orEmpty() }, day, clock, now),
                 partial = day >= today,
                 beforeFirst = firstDay == null || day < firstDay,
                 feedsBySide = Side.entries.associateWith { side -> started.count { side in sidesByEvent[it.id].orEmpty() } },

@@ -177,6 +177,28 @@ class RepositoryTest {
     }
 
     @Test
+    fun `keeping one of several duplicates deletes the others with one undo`() = runBlocking {
+        val a = repo.recordDiaper(Diaper.WET, Source.SHEET)!!.info.eventId
+        val b = repo.recordDiaper(Diaper.WET, Source.SHEET)!!.info.eventId
+        val c = repo.recordDiaper(Diaper.WET, Source.SHEET)!!.info.eventId
+        val done = repo.deleteAll(listOf(b, c))!!
+        assertEquals(listOf(a), db.events().all().filter { it.deletedAt == null }.map { it.id })
+        assertTrue(repo.undo(done.undoId))
+        assertEquals(setOf(a, b, c), db.events().all().filter { it.deletedAt == null }.map { it.id }.toSet())
+    }
+
+    @Test
+    fun `undoing a stop is refused once another sleep has started, so only one runs`() = runBlocking {
+        val first = repo.startSleep(Source.SHEET)!!
+        advance(10)
+        val stop = repo.stop(first.info.eventId, Source.SHEET)!!
+        advance(5)
+        repo.startSleep(Source.NOTIFICATION)!!
+        assertFalse(repo.undo(stop.undoId))
+        assertEquals(1, repo.homeState().running.size)
+    }
+
+    @Test
     fun `point records, today's counts, last feed and last side`() = runBlocking {
         val feed = repo.tapSide(Side.RIGHT, Source.SHEET)!!
         advance(20)
@@ -217,7 +239,7 @@ class RepositoryTest {
     }
 
     @Test
-    fun `a notification action shows Undo for 60 seconds`() = runBlocking {
+    fun `a notification action shows Undo for 10 seconds`() = runBlocking {
         repo.recordDiaper(Diaper.POOP, Source.NOTIFICATION)
         val recent = repo.homeState().recent
         assertNotNull(recent)
@@ -345,7 +367,7 @@ class RepositoryTest {
     }
 
     @Test
-    fun `a forgotten pause ends the feed at the pause, with Undo in the notification`() = runBlocking {
+    fun `a forgotten pause ends the feed at the pause, said in a notification of its own`() = runBlocking {
         val id = repo.tapSide(Side.LEFT, Source.SHEET)!!.info.eventId
         advance(10)
         val pausedAt = now
@@ -363,8 +385,46 @@ class RepositoryTest {
         assertEquals(EventStatus.ENDED.code, e.status)
         assertEquals(pausedAt, e.endAt)
         assertEquals(10 * MIN, s.lastFeedMs)
-        assertEquals(Verb.STOP, s.recent?.info?.verb)
+        // Not the 10 s "Recorded …" line (nobody tapped anything), but a notification that stays.
+        assertNull(s.recent)
         assertTrue(s.noEnd.isEmpty())
+        assertEquals(id, s.autoEnded.single().event.id)
+
+        // "Set end…" moves the end; a person's change, so the notification goes.
+        advance(5)
+        val moved = repo.moveEnd(id, pausedAt + 3 * MIN, Source.SHEET)!!
+        assertEquals(Verb.SET_END, moved.info.verb)
+        assertEquals(pausedAt + 3 * MIN, db.events().event(id)!!.endAt)
+        assertTrue(repo.homeState().autoEnded.isEmpty())
+        // Undo puts the end back at the pause; a person's change too, so the notification stays gone.
+        assertTrue(repo.undo(moved.undoId))
+        assertEquals(pausedAt, db.events().event(id)!!.endAt)
+        assertTrue(repo.homeState().autoEnded.isEmpty())
+    }
+
+    @Test
+    fun `a feed stopped at its pause stops being shown when dismissed or when the next feed starts`() = runBlocking {
+        val id = repo.tapSide(Side.LEFT, Source.SHEET)!!.info.eventId
+        advance(10)
+        repo.pause(id, Source.SHEET)
+        advance(45)
+        repo.applyOverruns()
+        assertEquals(id, repo.homeState().autoEnded.single().event.id)
+
+        advance(5)
+        repo.recordBottle(BottleContent.FORMULA, 90.0, Source.SHEET)
+        assertTrue(repo.homeState().autoEnded.isEmpty())
+    }
+
+    @Test
+    fun `a dismissed automatic stop stays dismissed`() = runBlocking {
+        val id = repo.tapSide(Side.LEFT, Source.SHEET)!!.info.eventId
+        advance(10)
+        repo.pause(id, Source.SHEET)
+        advance(45)
+        repo.applyOverruns()
+        repo.dismissNoEnd(id)
+        assertTrue(repo.homeState().autoEnded.isEmpty())
     }
 
     @Test

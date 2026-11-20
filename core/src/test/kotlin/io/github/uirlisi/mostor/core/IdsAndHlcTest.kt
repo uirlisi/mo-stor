@@ -69,6 +69,19 @@ class HlcTest {
     }
 
     @Test
+    fun `a stamp more than a day ahead doesn't move the clock, even one at the encoding's limit`() {
+        val clock = HybridClock("a", null) { 1_000 }
+        clock.receive(HlcStamp(1_000 + HybridClock.MAX_AHEAD_MS + 1, 0, "b"))
+        assertTrue(clock.now().wallMs < 1_000 + HybridClock.MAX_AHEAD_MS)
+        clock.receive(HlcStamp.parse("ffffffffffff-ffff-evil"))
+        val after = clock.now()
+        assertTrue(after.wallMs < 10_000)
+        // A day ahead still counts (a phone whose clock runs a little fast).
+        clock.receive(HlcStamp(1_000 + HybridClock.MAX_AHEAD_MS, 0, "b"))
+        assertEquals(1_000 + HybridClock.MAX_AHEAD_MS, clock.now().wallMs)
+    }
+
+    @Test
     fun `receiving an old stamp keeps the local clock`() {
         val clock = HybridClock("a", null) { 5_000 }
         assertEquals(HlcStamp(5_000, 0, "a"), clock.receive(HlcStamp(1_000, 9, "b")))

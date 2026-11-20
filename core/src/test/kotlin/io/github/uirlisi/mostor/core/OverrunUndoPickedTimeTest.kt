@@ -145,6 +145,28 @@ class PickedTimeTest {
     }
 
     @Test
+    fun `in the hour the clocks go back, a picked stop is the latest pass not after now`() {
+        // Dublin, 25 Oct 2026: 02:00 summer time becomes 01:00 winter time; 01:00–02:00 happens twice.
+        val firstPass = java.time.Instant.parse("2026-10-25T00:10:00Z").toEpochMilli() // 01:10 IST
+        val secondPass = java.time.Instant.parse("2026-10-25T01:10:00Z").toEpochMilli() // 01:10 GMT
+        val now = secondPass + 10 * MIN // 01:20 GMT
+        assertEquals(secondPass, PickedTime.latestAtOrBefore(LocalTime.of(1, 10), now, DUBLIN))
+        // Before the second pass came, the first is the latest.
+        assertEquals(firstPass, PickedTime.latestAtOrBefore(LocalTime.of(1, 10), firstPass + 50 * MIN, DUBLIN))
+        // An unknown end after a start in the first pass: the first pass is the earliest after it.
+        assertEquals(firstPass, PickedTime.earliestAtOrAfter(LocalTime.of(1, 10), firstPass - 5 * MIN, DUBLIN))
+    }
+
+    @Test
+    fun `a time the clocks skipped is the moment they changed, not a day off`() {
+        // Dublin, 29 Mar 2026: 01:00 GMT becomes 02:00 IST; 01:30 never shows on the clock.
+        val change = java.time.Instant.parse("2026-03-29T01:00:00Z").toEpochMilli()
+        val now = change + 20 * MIN // 02:20 IST
+        assertEquals(change, PickedTime.latestAtOrBefore(LocalTime.of(1, 30), now, DUBLIN))
+        assertEquals(change, PickedTime.earliestAtOrAfter(LocalTime.of(1, 30), change - 40 * MIN, DUBLIN))
+    }
+
+    @Test
     fun `minus chips`() {
         assertEquals(1_000_000L - 10 * MIN, PickedTime.minutesBefore(1_000_000L, 10))
     }

@@ -205,6 +205,22 @@ class EditAndHouseholdTest {
     }
 
     @Test
+    fun `with every child archived by a sync, the app still opens and records for one of them`() = runBlocking {
+        repo.ensureInitialized()
+        val first = repo.homeState().childId
+        val second = repo.addChild(ChildFields())!!.info.eventId
+        // Phone A archived one, phone B (out of range) the other: each allowed there, none left after the sync.
+        db.children().upsert(db.children().live().map { it.copy(archivedAt = 1L) })
+
+        val st = repo.homeState()
+        assertTrue(st.childId == first || st.childId == second)
+        assertNotNull(repo.recordDiaper(Diaper.WET, Source.SHEET))
+        repo.dayView(0)
+        assertNotNull(repo.setChildArchived(second, false))
+        assertEquals(second, repo.homeState().children.single().id)
+    }
+
+    @Test
     fun `presets are added, renamed, moved and deleted, each undoable`() = runBlocking {
         repo.ensureInitialized()
         val child = repo.homeState().childId

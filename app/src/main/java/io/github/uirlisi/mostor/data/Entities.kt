@@ -54,6 +54,8 @@ data class EventEntity(
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
     @ColumnInfo(name = "deleted_at") val deletedAt: Long?,
     val hlc: String,
+    /** Schema 5: the stamp an automatic change was made from (`Event.autoBase`); null for a person's. */
+    @ColumnInfo(name = "auto_base") val autoBase: String? = null,
 )
 
 @Entity(tableName = "breast_segment", indices = [Index("event_id")])
@@ -121,10 +123,11 @@ data class UndoEntity(
 )
 
 /**
- * A phone this one syncs with (SPEC §4.3, Phase 5; schema version 3). Device-local, never synced;
- * "Forget this phone" deletes the row. The household key the phones share is in `setting`, wrapped
- * by an Android Keystore key. Version vectors aren't stored: each session computes them from the
- * rows (DECISIONS 2026-11-14, "Sync protocol").
+ * How sessions with another phone went (SPEC §4.3, Phase 5; schema version 3). Device-local, never
+ * synced. Which phones belong to the household is [MemberEntity]'s job (schema version 4); a row
+ * here is made on pairing or on the first session with a phone. The household key the phones share
+ * is in `setting`, wrapped by an Android Keystore key. Version vectors aren't stored: each session
+ * computes them from the rows (DECISIONS 2026-11-14, "Sync protocol").
  */
 @Entity(tableName = "peer")
 data class PeerEntity(
@@ -134,4 +137,19 @@ data class PeerEntity(
     @ColumnInfo(name = "last_sync_at") val lastSyncAt: Long?,
     /** "ok", or a short reason the last attempt failed. */
     @ColumnInfo(name = "last_result") val lastResult: String?,
+)
+
+/**
+ * A phone of the household (SPEC §4.2, §9.4; schema version 4): synced whole in every session, never
+ * exported. A removed phone keeps its row with `removed_at` set. See [io.github.uirlisi.mostor.core.Member].
+ */
+@Entity(tableName = "member")
+data class MemberEntity(
+    @PrimaryKey @ColumnInfo(name = "device_id") val deviceId: String,
+    val name: String,
+    @ColumnInfo(name = "added_by") val addedBy: String?,
+    @ColumnInfo(name = "added_at") val addedAt: Long,
+    @ColumnInfo(name = "removed_at") val removedAt: Long?,
+    @ColumnInfo(name = "removed_by") val removedBy: String?,
+    val hlc: String,
 )

@@ -37,11 +37,13 @@ import android.content.Intent
 import android.provider.Settings
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.uirlisi.mostor.ui.MoStorSwitch
 import io.github.uirlisi.mostor.R
+import io.github.uirlisi.mostor.container
 import io.github.uirlisi.mostor.core.Volume
 import io.github.uirlisi.mostor.core.VolumeUnit
 import io.github.uirlisi.mostor.data.Keys
@@ -55,17 +57,17 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 /** The settings pages (SPEC §6.6). [CHILD] takes the child's id, or none for a new child. */
-enum class SettingsPage { MAIN, CHILD, SHOWN, PRESETS, BACKUP, SYNC, ABOUT }
+enum class SettingsPage { MAIN, HOUSEHOLD, CHILD, SHOWN, PRESETS, BACKUP, ABOUT }
 
 @Composable
 fun SettingsScreen(ui: AppUi, page: SettingsPage = SettingsPage.MAIN, arg: String? = null) {
     when (page) {
         SettingsPage.MAIN -> MainSettings(ui)
+        SettingsPage.HOUSEHOLD -> HouseholdPage(ui)
         SettingsPage.CHILD -> ChildEditor(ui, arg)
         SettingsPage.SHOWN -> ShownSettings(ui)
         SettingsPage.PRESETS -> PresetSettings(ui)
         SettingsPage.BACKUP -> BackupPage(ui)
-        SettingsPage.SYNC -> SyncPage(ui)
         SettingsPage.ABOUT -> AboutPage(ui)
     }
 }
@@ -81,6 +83,7 @@ private val AUTO_CLOSE = listOf(2, 4, 6, 10, 0)
 private fun MainSettings(ui: AppUi) {
     val repo = ui.repository
     val fmt = ui.fmt
+    val context = LocalContext.current
     val home by remember { repo.homeStates() }.collectAsStateWithLifecycle(initialValue = null)
     val children by remember { repo.childrenFlow() }.collectAsStateWithLifecycle(initialValue = emptyList())
     val st = home ?: return
@@ -92,6 +95,18 @@ private fun MainSettings(ui: AppUi) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(stringResource(R.string.tab_settings), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(vertical = 12.dp))
+
+        // Households and phones (SPEC §9.4): this phone's households, and the open one's phones.
+        Section(R.string.set_household)
+        val households by context.container.households.flow.collectAsStateWithLifecycle()
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable { ui.open(Route.Settings(SettingsPage.HOUSEHOLD)) },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(context.container.nameOf(households.active), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            Icon(painterResource(R.drawable.ic_next), contentDescription = null)
+        }
+        Hint(R.string.set_sync_hint)
 
         // Children (synced)
         Section(R.string.set_children)
@@ -152,7 +167,6 @@ private fun MainSettings(ui: AppUi) {
             set(Keys.HIDE_DETAILS, it.toString())
         }
         // Android uses the hidden version only when the phone hides lock-screen content (DECISIONS).
-        val context = LocalContext.current
         TextButton(onClick = {
             val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
                 .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
@@ -195,10 +209,6 @@ private fun MainSettings(ui: AppUi) {
         Section(R.string.set_backup)
         Hint(R.string.set_backup_warning)
         LinkRow(R.string.set_backup_open) { ui.open(Route.Settings(SettingsPage.BACKUP)) }
-
-        Section(R.string.set_sync)
-        Hint(R.string.set_sync_hint)
-        LinkRow(R.string.set_sync_open) { ui.open(Route.Settings(SettingsPage.SYNC)) }
 
         Section(R.string.set_about)
         LinkRow(R.string.set_about) { ui.open(Route.Settings(SettingsPage.ABOUT)) }
@@ -245,9 +255,12 @@ private fun LimitChoice(label: Int, currentMs: Long?, choices: List<Int>, ui: Ap
 }
 
 @Composable
-internal fun Section(res: Int) {
+internal fun Section(res: Int) = Section(AnnotatedString(stringResource(res)))
+
+@Composable
+internal fun Section(text: AnnotatedString) {
     HorizontalDivider(Modifier.padding(top = 12.dp))
-    Text(stringResource(res), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp))
+    Text(text, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp))
 }
 
 @Composable
@@ -256,8 +269,24 @@ internal fun Label(res: Int) {
 }
 
 @Composable
-internal fun Hint(res: Int) {
-    Text(stringResource(res), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+internal fun Hint(res: Int) = Hint(AnnotatedString(stringResource(res)))
+
+/**
+ * A string whose one argument is the app's name ("Mo Stór", or "Mo Stór dev"): no string but
+ * `app_name` spells it. Extra arguments are ignored, so a string without the name works too.
+ */
+@Composable
+internal fun namedString(res: Int): String = stringResource(res, stringResource(R.string.app_name))
+
+@Composable
+internal fun Hint(text: AnnotatedString) {
+    Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+/** A settings page's action button. */
+@Composable
+internal fun SettingsButton(res: Int, onClick: () -> Unit) {
+    OutlinedButton(onClick = onClick, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(res)) }
 }
 
 @Composable

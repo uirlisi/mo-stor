@@ -60,11 +60,11 @@ object Timers {
         val open = t.openSegment ?: return Change()
         val switchAt = maxOf(at, open.startAt)
         if (switchAt == open.startAt) {
-            return Change(segments = listOf(RowChange(open, open.copy(side = open.side.other).touched(cx))))
+            return Change(segments = listOf(RowChange(open, open.copy(side = open.side.other).touched(cx)))).touchingEvent(e, cx)
         }
         val closed = open.copy(endAt = switchAt).touched(cx)
         val next = newSegment(e.id, open.side.other, switchAt, cx)
-        return Change(segments = listOf(RowChange(open, closed), RowChange(null, next)))
+        return Change(segments = listOf(RowChange(open, closed), RowChange(null, next))).touchingEvent(e, cx)
     }
 
     /** Pauses a breast feed: closes the open segment at [at] (not before its start). */
@@ -72,13 +72,13 @@ object Timers {
         val e = t.event
         if (e.kind != Kind.BREAST || e.status != EventStatus.RUNNING || e.deletedAt != null) return Change()
         val open = t.openSegment ?: return Change()
-        return Change(segments = listOf(RowChange(open, open.copy(endAt = maxOf(at, open.startAt)).touched(cx))))
+        return Change(segments = listOf(RowChange(open, open.copy(endAt = maxOf(at, open.startAt)).touched(cx)))).touchingEvent(e, cx)
     }
 
     /** Resumes a paused feed on [side] at [at] (not before the pause). */
     fun resume(t: TimedEvent, side: Side, at: Long, cx: ChangeContext): Change {
         val pausedAt = t.pausedAt ?: return Change()
-        return Change(segments = listOf(RowChange(null, newSegment(t.event.id, side, maxOf(at, pausedAt), cx))))
+        return Change(segments = listOf(RowChange(null, newSegment(t.event.id, side, maxOf(at, pausedAt), cx)))).touchingEvent(t.event, cx)
     }
 
     /**
@@ -90,7 +90,7 @@ object Timers {
         val last = t.segments.last()
         val at = newAt.coerceIn(last.startAt, maxOf(last.startAt, cx.now))
         if (at == last.endAt) return Change()
-        return Change(segments = listOf(RowChange(last, last.copy(endAt = at).touched(cx))))
+        return Change(segments = listOf(RowChange(last, last.copy(endAt = at).touched(cx)))).touchingEvent(t.event, cx)
     }
 
     /**
@@ -103,7 +103,7 @@ object Timers {
         val cur = t.segments.last()
         val at = newAt.coerceIn(prev.endAt ?: prev.startAt, cur.endAt ?: Long.MAX_VALUE)
         if (at == cur.startAt) return Change()
-        return Change(segments = listOf(RowChange(cur, cur.copy(startAt = at).touched(cx))))
+        return Change(segments = listOf(RowChange(cur, cur.copy(startAt = at).touched(cx)))).touchingEvent(t.event, cx)
     }
 
     /** Discards a timer that shouldn't count (soft delete of the event and its segments). */
@@ -123,7 +123,56 @@ object Timers {
     fun giveUp(t: TimedEvent, cx: ChangeContext): Change {
         val e = t.event
         if (e.status != EventStatus.RUNNING || e.deletedAt != null) return Change()
-        return Change(listOf(RowChange(e, e.copy(status = EventStatus.END_UNKNOWN, endAt = null).touched(cx))))
+        return Change(listOf(RowChange(e, e.copy(status = EventStatus.END_UNKNOWN, endAt = null).touched(cx)))).automatic()
+    }
+
+    /**
+     * A feed left paused for its nudge interval ends at its pause (SPEC §5.5), as an automatic change
+     * ([Event.autoBase]): a resume or stop made on another phone meanwhile wins over it.
+     */
+    fun endForgottenPause(t: TimedEvent, cx: ChangeContext): Change {
+        val pausedAt = t.pausedAt ?: return Change()
+        return stop(t, pausedAt, cx).automatic()
+    }
+
+    /**
+     * Repairs an ended breast feed whose segments disagree with its end, which a sync can make: a
+     * stop on one phone merged with a switch or resume made earlier on another leaves the other
+     * phone's new segment open (SPEC §9.5). Each segment ends at the next one's start or at the
+     * feed's end, whichever is first; a segment that starts at or after the end is deleted. Every
+     * phone makes the same repair, so they still agree. Empty when nothing needs it.
+     */
+    fun tidyEnded(t: TimedEvent, cx: ChangeContext): Change {
+        val e = t.event
+        val end = e.endAt
+        if (e.kind != Kind.BREAST || e.status != EventStatus.ENDED || e.deletedAt != null || end == null) return Change()
+        val segments = t.segments.sortedWith(compareBy({ it.startAt }, { it.createdAt }, { it.id }))
+        val out = mutableListOf<RowChange<BreastSegment>>()
+        segments.forEachIndexed { i, s ->
+            if (s.startAt >= end && i > 0) {
+                out += RowChange(s, s.copy(deletedAt = cx.now).touched(cx))
+                return@forEachIndexed
+            }
+            val limit = minOf(end, segments.getOrNull(i + 1)?.startAt?.takeIf { it < end } ?: end)
+            val fixed = maxOf(limit, s.startAt)
+            if (s.endAt == null || s.endAt > fixed) out += RowChange(s, s.copy(endAt = fixed).touched(cx))
+        }
+        return Change(segments = out)
+    }
+
+    /**
+     * Moves the end of an ended timer to [newEnd] ("Set end…" on a feed stopped automatically),
+     * clamped between the start of its last segment (or its start) and [ChangeContext.now]. A breast
+     * feed's last segment ends with it. A person's change: it clears the automatic mark.
+     */
+    fun moveEnd(t: TimedEvent, newEnd: Long, cx: ChangeContext): Change {
+        val e = t.event
+        if (e.status != EventStatus.ENDED || e.deletedAt != null) return Change()
+        val end = newEnd.coerceIn(earliestEnd(t), maxOf(earliestEnd(t), cx.now))
+        val last = t.segments.lastOrNull()
+        if (end == e.endAt && (last == null || last.endAt == end)) return Change()
+        val segments = listOfNotNull(last?.let { RowChange(it, it.copy(endAt = end).touched(cx)) })
+        return Change(listOf(RowChange(e, e.copy(endAt = end).touched(cx))), segments)
     }
 
     /**

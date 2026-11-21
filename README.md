@@ -64,7 +64,8 @@ apkanalyzer manifest permissions mo-stor-0.7.0.apk
 
 ## Install
 
-<a href="https://github.com/user-attachments/assets/0d4e10e9-c75a-4792-b475-3b28a2bf5661"><img src="images/install-video.png" align="right" width="220" alt="Video: installing Mo Stór from GitHub (76 seconds)"></a>
+<a href="https://github.com/user-attachments/assets/0d4e10e9-c75a-4792-b475-3b28a2bf5661">
+<img src="images/install-video.png" align="right" width="220" alt="Video: installing Mo Stór from GitHub (76 seconds)"></a>
 
 Mo Stór needs **Android 12** or later.  
 On the phone:

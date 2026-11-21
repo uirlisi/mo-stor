@@ -1,12 +1,8 @@
-<img src="images/icon.png" align="right" width="128" height="128" alt="Mo Stór icon">
+<h1> Mo Stór <img src="images/icon.png" width="128" height="128" align="right" alt="Mo Stór icon"></h1>
 
-<h1>Mo Stór
-</h1>
 
 <i>[mə ˈstoːr] · Irish: “My Treasure”</i>    
 A local baby log you use from the notification, even on the lock screen.
-
-<br clear="right">
 
 
 Mo Stór is an Android baby log for one-hand use at 3am. The core proposition is a 2-tap recording of any metric you need, straight from a notification on a locked screen: feeding, meds, sleep, diaper change, or pumping.  
@@ -68,10 +64,27 @@ apkanalyzer manifest permissions mo-stor-0.7.0.apk
 
 ## Install
 
-Mo Stór needs **Android 12** or later.
+<a href="https://github.com/user-attachments/assets/0d4e10e9-c75a-4792-b475-3b28a2bf5661"><img src="images/install-video.png" align="right" width="220" alt="Video: installing Mo Stór from GitHub (76 seconds)"></a>
 
-Download the APK from [Releases](../../releases) and open it on the phone. Releases are signed
-with this certificate (SHA-256):
+Mo Stór needs **Android 12** or later.  
+On the phone:
+
+1. In Chrome, open
+   [github.com/uirlisi/mo-stor/releases/latest](https://github.com/uirlisi/mo-stor/releases/latest).
+2. Under **Assets**, tap the `.apk` file.   
+Chrome warns about every APK file: tap
+   **Download anyway**, then **Open**.
+3. If Android asks for permission, tap **Settings** and turn on **Allow from this source**.  
+   The install prompt comes back by itself.
+4. Tap **Install**.   
+If Play Protect asks to scan the app, tap **Scan app**, then **Install**.
+5. Tap **Open** and allow notifications: Mo Stór works from its notification.
+
+To see it done, tap the picture for a 76-second video.
+
+<br clear="right">
+
+Releases are signed with this certificate (SHA-256):
 
 ```
 8c:cd:3e:af:d0:69:c7:94:53:1e:37:3d:3f:33:2f:ff:8a:77:c1:2d:6f:01:0e:18:e5:6b:a7:f6:c4:86:6b:32
